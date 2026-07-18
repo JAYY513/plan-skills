@@ -18,4 +18,5 @@
 
 - 执行层（TASKS / FINDINGS / INBOX / .planning/）全自动，写后告知一句即可；锚（SPEC）和路标（ROADMAP）写前必须确认
 - 规则细节见对应技能：任务录入、开工、工作区、完成 → plan-task；计划变更、里程碑交接、INBOX 裁决 → plan-review。本文件不复述规则条文
+- 体系也要演化：plan-review 收尾会做「体系自检」（纪律执行度 + 文件使用率 + 演化提案）；平时发现某条纪律执行不下去 / 某文件没人看 → 随手记 INBOX 一条"体系问题"，留待自检时裁决
 - `.planning/` 活跃工作区建议加入 gitignore；`.planning/done/` 提交入库，归档后永不修改
