@@ -1,6 +1,6 @@
 #!/bin/sh
 # stop-gate hook：会话收尾校验。
-# 校验条件与 task-plan 技能的「完成三合一动作」一致：存在活跃工作区但对应任务未标 ✅
+# 校验条件与 plan-task 技能的「完成三合一动作」一致：存在活跃工作区但对应任务未标 ✅
 # （无回填归档迹象）→ 输出阻止 / 警告文本。hook 是技能规则的执行者，不是第二套规则。
 # 本脚本只读状态文件并输出校验文本，绝不写状态文件；文件缺失时静默退出。
 # 禁用方式：设置环境变量 PLANNING_HOOKS_DISABLED=1，本脚本立即退出。
@@ -35,7 +35,7 @@ done
 
 if [ -n "$warn" ]; then
   echo "[plan] 阻止收尾：以下活跃工作区的任务未标 ✅：$warn"
-  echo "[plan] 若任务已完成，请先执行三合一动作（结论回填 FINDINGS.md + progress.md 顶部固化 postmortem + 工作区移入 .planning/done/），再走 new-task 标 ✅；若任务未完成，请在 progress.md 记录当前进展供下次恢复。"
+  echo "[plan] 若任务已完成，请先执行三合一动作（结论回填 FINDINGS.md + progress.md 顶部固化 postmortem + 工作区移入 .planning/done/），再走 plan-task 标 ✅；若任务未完成，请在 progress.md 记录当前进展供下次恢复。"
 fi
 
 exit 0

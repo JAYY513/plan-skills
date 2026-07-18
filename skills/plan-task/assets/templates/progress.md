@@ -3,7 +3,7 @@
 ## Postmortem（完成时填写，填完即把工作区移入 .planning/done/）
 
 - **结论**：→ FINDINGS.md <F? 编号>
-- **踩过的坑**：<试过什么不行、为什么；同时确认已记入 FINDINGS.md>
+- **踩过的坑**：<一句话总结；详情在 FINDINGS.md>
 - **声明**：本文档为过程记录，结论以 FINDINGS.md 为准。
 
 ---
