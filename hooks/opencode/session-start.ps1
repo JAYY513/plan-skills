@@ -9,7 +9,7 @@ $Root = if ($env:PLANNING_ROOT) { $env:PLANNING_ROOT } else { "." }
 
 $roadmap = Join-Path $Root "ROADMAP.md"
 if (Test-Path $roadmap) {
-  $milestone = Select-String -Path $roadmap -Pattern "▶" | Select-Object -First 1
+  $milestone = Select-String -Path $roadmap -Pattern "^## *▶" | Select-Object -First 1
   if ($milestone) { Write-Output ("[plan] 当前里程碑：" + ($milestone.Line -replace '^#* ', '')) }
 }
 

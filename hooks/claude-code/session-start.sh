@@ -10,7 +10,7 @@ ROOT="${PLANNING_ROOT:-.}"
 
 # 当前里程碑
 if [ -f "$ROOT/ROADMAP.md" ]; then
-  milestone=$(grep -m1 '▶' "$ROOT/ROADMAP.md" | sed 's/^#* *//')
+  milestone=$(grep -m1 '^## *▶' "$ROOT/ROADMAP.md" | sed 's/^#* *//')
   [ -n "$milestone" ] && echo "[plan] 当前里程碑：$milestone"
 fi
 

@@ -34,6 +34,7 @@ Get-ChildItem $planning -Directory | Where-Object { $_.Name -ne "done" } | ForEa
 if ($warn.Count -gt 0) {
   Write-Output ("[plan] 阻止收尾：以下活跃工作区的任务未标 ✅： " + ($warn -join " "))
   Write-Output "[plan] 若任务已完成，请先执行三合一动作（结论回填 FINDINGS.md + progress.md 顶部固化 postmortem + 工作区移入 .planning/done/），再走 plan-task 标 ✅；若任务未完成，请在 progress.md 记录当前进展供下次恢复。"
+  exit 2  # Stop hook：exit 2 = 阻断收尾
 }
 
 exit 0
