@@ -9,3 +9,5 @@
 - 失败尝试（试过什么、为什么不行）记录到 FINDINGS.md，避免重复踩坑
 - 完成的任务不许删：标记 ✅ 移入 TASKS.md「已完成（待归档）」，由周回顾统一归档到 ROADMAP.md
 - 声称任务完成前，逐条核对该任务的 DoD（完成标准）
+- 认领跨会话任务前，先读对应 `.planning/<slug>/` 工作区的 plan.md（从「当前位置」恢复，不凭记忆）；任务完成必须走三合一动作（结论回填 FINDINGS.md + progress.md 顶部固化 postmortem + 工作区移入 `.planning/done/`）才可标 ✅
+- `.planning/` 活跃工作区建议加入 gitignore；`.planning/done/` 提交入库，归档后永不修改

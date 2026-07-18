@@ -8,7 +8,8 @@
 |---|---|
 | `plan-init` | 项目启动时初始化计划体系：创建 SPEC.md（锚）、ROADMAP.md（里程碑 + 产出存档）、TASKS.md（当前任务）、INBOX.md（想法停车场）、FINDINGS.md（调研知识库），并向 AGENTS.md 注入计划纪律。每个项目只运行一次 |
 | `new-task` | 任务录入与拆解：分流（任务 / INBOX / 调研探针 / FINDINGS）、控制 0.5~2 天粒度、生成 DoD、任务完成归档、失败尝试记录 |
-| `weekly-review` | 周回顾：里程碑验收与交接（归档产出 + 启动下一里程碑首批任务）、停滞任务清理、INBOX 裁决、文档防腐化 |
+| `weekly-review` | 周回顾：里程碑验收与交接（归档产出 + 启动下一里程碑首批任务）、停滞任务清理、INBOX 裁决、`.planning/` 工作区兜底、文档防腐化 |
+| `task-plan` | 单任务工作区（作战室）：为跨会话 / 路径不确定的任务在 `.planning/<slug>/` 建 plan.md + progress.md，执行 2-Action 落盘纪律，完成时走三合一动作（回填 FINDINGS + postmortem + 移入 done/） |
 
 ## 安装
 
@@ -29,6 +30,47 @@ npx skills add JAYY513/plan-skills --skill weekly-review
 1. 新项目根目录：让 agent 运行 `plan-init`，回答 3 个问题，体系就位
 2. 日常开发：新任务 / 新想法 / 调研结论都交给 `new-task` 分流落盘
 3. 每周（或里程碑完成时）：运行 `weekly-review`，验收、归档、启动下一阶段
+4. 跨会话 / 调研型大任务：让 agent 运行 `task-plan` 建独立工作区，完成时自动三合一归档
+
+## 双层体系：项目级 vs 单任务级
+
+项目级 5 文件是每条信息的唯一的家；`.planning/` 是单任务的临时工作区，只放执行过程，禁止存放最终结论。
+
+```
+<项目根>/
+├── SPEC.md / ROADMAP.md / TASKS.md / INBOX.md / FINDINGS.md   # 项目级：唯一信息家
+└── .planning/                    # 单任务级：临时工作区
+    ├── 2026-06-08-lsp-client/    # 活跃工作区（建议 gitignore）
+    │   ├── plan.md               #   步骤 checklist + 当前位置
+    │   └── progress.md           #   过程日志 + 顶部 postmortem 区
+    └── done/                     # 已归档（提交入库，永不修改，只读）
+        └── 2026-05-30-hashline-core/
+```
+
+归档规则：
+
+- 任务完成走三合一动作：结论回填 FINDINGS.md（含"过程追溯"引用行）→ progress.md 顶部固化 postmortem → 整个工作区移入 `.planning/done/`，缺一件不许标 ✅
+- `.planning/` 活跃区建议 gitignore，`.planning/done/` 提交入库——完成历史不删
+- 归档后永不修改；漏归档 / 停滞的工作区由 weekly-review 兜底
+
+## 可选 hook 层
+
+无 hook 时，上述纪律靠 AGENTS.md + agent 自觉执行；安装平台 hook 后由脚本在关键时机自动注入提醒、强制校验，行为等价只是强度更强。hook 脚本只读状态文件并输出提示文本，绝不写状态文件；设置环境变量 `PLANNING_HOOKS_DISABLED=1` 可一键全部禁用。
+
+| 平台 | 目录 |
+|---|---|
+| Claude Code | `hooks/claude-code/`（settings.json 片段 + 脚本） |
+| Codex | `hooks/codex/` |
+| OpenCode | `hooks/opencode/` |
+
+4 个机制：
+
+- **session-start**：会话开始注入当前里程碑 + 进行中任务 + 活跃工作区列表
+- **pre-tool-use**：执行类工具前注入当前任务 + 工作区 plan.md「当前位置」摘要
+- **post-tool-use**：写代码文件后提醒更新 progress.md / 勾选 plan.md 步骤
+- **stop-gate**：会话收尾校验——存在活跃工作区但任务未标 ✅ → 阻止并提示三合一动作
+
+各平台的安装方式见对应目录的 README.md。未匹配到平台时跳过不报错，靠 AGENTS.md 纪律达到等价行为，强度较弱。
 
 ## 设计原则
 
