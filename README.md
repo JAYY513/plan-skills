@@ -30,6 +30,38 @@ npx skills add JAYY513/plan-skills --skill plan-review
 2. 之后正常开发即可——和 agent 讨论蓝图、阶段计划、"接下来做 X"、调研结论，agent 按 AGENTS.md 中的自动落盘判断矩阵自己决定写进哪个文件（执行层写后告知，锚和路标写前确认），不需要你点名任何技能
 3. 里程碑完成、计划失序或 INBOX 积压时：跑一次 `plan-review`，验收、归档、裁决、启动下一阶段
 
+## 快速上手：说什么 → 发生什么
+
+| 你说 / 讨论中出现 | agent 自动做的事 | 是否先问你 |
+|---|---|---|
+| "我想做一个 xxx 工具，核心是……" | 更新 SPEC.md 草稿 | 写前确认 |
+| "第一阶段先跑通 xxx 就算成" | 写入 ROADMAP.md 里程碑 + 验收标准 | 写前确认 |
+| "这个云同步功能以后再说" | 归入 ROADMAP 的 P1 桶（或先停 INBOX） | 写前确认 |
+| "接下来做登录页" | 录入 TASKS.md，拆 0.5~2 天粒度，带 DoD | 不问，写后告知一句 |
+| "我试过 X 方案，不行，因为……" | 落 FINDINGS.md（失败尝试，含原因） | 不问，写后告知 |
+| "开工 / 开始做 X" | 认领任务；跨会话大任务自动建 `.planning/` 工作区 | 不问，写后告知 |
+| "做完了" | 核对 DoD → 三合一归档（回填 FINDINGS + postmortem + 移入 done/）→ 标 ✅ | 不问 |
+| "周回顾 / 这个阶段做完了" | 跑 plan-review：验收、交接、裁决、体系自检 | 计划变更处确认 |
+
+## hook 最小安装（以 Claude Code 为例）
+
+```bash
+# 1. 复制脚本到项目
+cp hooks/claude-code/*.sh <项目根>/hooks/
+
+# 2. 把 hooks/claude-code/settings.json 的 hooks 片段合并进 <项目根>/.claude/settings.json
+```
+
+Windows 无 Git Bash 时改用 `.ps1` 版本，command 写 `powershell -NoProfile -ExecutionPolicy Bypass -File hooks/session-start.ps1`。验证：`sh hooks/session-start.sh`（无状态文件时应静默退出）。Codex / OpenCode 见各自目录 README。
+
+## 常见问题
+
+- **项目已经做了一半，能中途接入吗？** 能。plan-init 只创建缺失的模板文件，已存在的同名文件会停止并提示，不会覆盖；回答 4 个问题时按现状填即可
+- **已有 AGENTS.md 会被覆盖吗？** 不会，判断矩阵追加到文件末尾，原有内容不动
+- **想临时关掉 hooks？** 设环境变量 `PLANNING_HOOKS_DISABLED=1`，全部 hook 立即静默
+- **日常要看哪个文件？** 平时只看 TASKS.md（做什么）；讨论结论查 FINDINGS.md；阶段进度看 ROADMAP.md 的 ▶；SPEC.md 和 INBOX.md 不需要日常看
+- **多久跑一次 plan-review？** 事件驱动：里程碑验收通过时必跑；其余随意——感觉计划乱了、INBOX 积压了就可以跑，单次 ≤30 分钟
+
 ## 双层体系：项目级 vs 单任务级
 
 项目级 5 文件是每条信息的唯一的家；`.planning/` 是单任务的临时工作区，只放执行过程，禁止存放最终结论。
