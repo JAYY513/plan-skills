@@ -7,6 +7,9 @@ if ($env:PLANNING_HOOKS_DISABLED -eq "1") { exit 0 }
 
 $Root = if ($env:PLANNING_ROOT) { $env:PLANNING_ROOT } else { "." }
 
+# 无任何状态文件时静默退出（连提示行也不输出）
+if (-not ((Test-Path (Join-Path $Root "ROADMAP.md")) -or (Test-Path (Join-Path $Root "TASKS.md")) -or (Test-Path (Join-Path $Root "INBOX.md")) -or (Test-Path (Join-Path $Root ".planning")))) { exit 0 }
+
 $roadmap = Join-Path $Root "ROADMAP.md"
 if (Test-Path $roadmap) {
   $milestone = Select-String -Path $roadmap -Pattern "^## *▶" | Select-Object -First 1

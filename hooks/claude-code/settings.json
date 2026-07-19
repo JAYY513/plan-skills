@@ -23,6 +23,13 @@
         ]
       }
     ],
+    "PreCompact": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh hooks/pre-compact.sh" }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

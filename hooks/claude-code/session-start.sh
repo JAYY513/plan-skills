@@ -8,6 +8,9 @@
 
 ROOT="${PLANNING_ROOT:-.}"
 
+# 无任何状态文件时静默退出（连提示行也不输出）
+[ -f "$ROOT/ROADMAP.md" ] || [ -f "$ROOT/TASKS.md" ] || [ -f "$ROOT/INBOX.md" ] || [ -d "$ROOT/.planning" ] || exit 0
+
 # 当前里程碑
 if [ -f "$ROOT/ROADMAP.md" ]; then
   milestone=$(grep -m1 '^## *▶' "$ROOT/ROADMAP.md" | sed 's/^#* *//')
