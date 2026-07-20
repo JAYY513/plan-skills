@@ -93,14 +93,27 @@ Windows 无 Git Bash 时改用 `.ps1` 版本，command 写 `powershell -NoProfil
 | Codex | `hooks/codex/` |
 | OpenCode | `hooks/opencode/` |
 
-4 个机制：
+5 个机制：
 
 - **session-start**：会话开始注入当前里程碑 + 进行中任务 + 活跃工作区列表 + 主动提示行（进行中任务数 / INBOX 待裁决数）
 - **pre-tool-use**：执行类工具前注入当前任务 + 工作区 plan.md「当前位置」摘要
 - **post-tool-use**：写代码文件后提醒更新 progress.md / 勾选 plan.md 步骤
 - **stop-gate**：会话收尾校验——存在活跃工作区但任务未标 ✅ → 阻止并提示三合一动作
+- **pre-compact**：上下文压缩前提醒把进展 / 「当前位置」抢写进工作区，防漂移
 
 各平台的安装方式见对应目录的 README.md。未匹配到平台时跳过不报错，靠 AGENTS.md 纪律达到等价行为，强度较弱。
+
+## 参与开发
+
+```bash
+# 启用 pre-commit（改 hook 脚本前必跑冒烟测试，失败拒绝提交）
+git config core.hooksPath .githooks
+
+# 手动跑测试
+sh tests/test-hooks.sh
+```
+
+改动 `hooks/` 下脚本时三平台目录（claude-code / codex / opencode）必须同步，测试会抓到不一致的行为。
 
 ## 设计原则
 

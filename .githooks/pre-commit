@@ -1,0 +1,9 @@
+#!/bin/sh
+# pre-commit：运行 hooks 冒烟测试，失败则拒绝提交。
+# 生效方式（仓库内执行一次）：git config core.hooksPath .githooks
+
+echo "[pre-commit] 运行 hooks 冒烟测试…"
+sh tests/test-hooks.sh || {
+  echo "[pre-commit] 测试失败，提交已阻止。修复后重试，或 git commit --no-verify 跳过。"
+  exit 1
+}
