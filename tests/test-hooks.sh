@@ -244,6 +244,39 @@ ok=0
 [ -z "$out" ] || ok=1
 report "permission-request：PLANNING_HOOKS_DISABLED=1 静默 exit 0" $ok
 
+# ── 用例 9：plan-doctor：空目录可运行、输出汇总行、exit 1 ──────
+dir=$(mk)
+fakehome=$(mk)
+out=$(cd "$dir" && HOME="$fakehome" sh "$HOOKS_DIR/plan-doctor.sh")
+rc=$?
+ok=0
+[ $rc -eq 1 ] || ok=1
+echo "$out" | grep -q '合计 .* 项：PASS .*，WARN .*，FAIL ' || ok=1
+echo "$out" | grep -q '\[FAIL\] 技能安装' || ok=1
+report "plan-doctor：空目录输出汇总行且 exit 1" $ok
+
+# ── 用例 10：plan-doctor：完整假安装全 PASS、exit 0 ────────────
+dir=$(mk)
+fakehome=$(mk)
+mkdir -p "$dir/.agents/skills/plan-task/hooks" "$dir/.claude/skills/plan-task/hooks" "$dir/.codex" "$fakehome/.codex"
+cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.ps1 "$dir/.agents/skills/plan-task/hooks/"
+cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.ps1 "$dir/.claude/skills/plan-task/hooks/"
+cp "$(cd "$(dirname "$0")/../skills/plan-task" && pwd)/SKILL.md" "$dir/.agents/skills/plan-task/SKILL.md"
+cp "$(cd "$(dirname "$0")/../skills/plan-task" && pwd)/SKILL.md" "$dir/.claude/skills/plan-task/SKILL.md"
+cat > "$dir/.codex/hooks.json" <<'EOF'
+{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "sh .agents/skills/plan-task/hooks/session-start.sh" } ] } ] } }
+EOF
+printf '[features]\nhooks = true\n' > "$fakehome/.codex/config.toml"
+for f in SPEC ROADMAP TASKS INBOX FINDINGS; do touch "$dir/$f.md"; done
+out=$(cd "$dir" && HOME="$fakehome" sh "$HOOKS_DIR/plan-doctor.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || { ok=1; echo "$out"; }
+echo "$out" | grep -q 'FAIL 0' || ok=1
+echo "$out" | grep -q '\[PASS\] Claude Code hooks 注册' || ok=1
+echo "$out" | grep -q '\[PASS\] Codex hooks 注册' || ok=1
+report "plan-doctor：完整假安装全 PASS 且 exit 0" $ok
+
 # ── 汇总 ───────────────────────────────────────────────────────
 echo "-----"
 echo "合计 $((PASS + FAIL)) 个用例：PASS $PASS，FAIL $FAIL"

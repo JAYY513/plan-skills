@@ -55,13 +55,14 @@ npx skills add JAYY513/plan-skills --skill plan-review
 - **Codex**：CLI 不安装仓库根的 `hooks/` 目录，需手动安装一次——把 plan-task 技能目录下 `hooks/` 的脚本复制到 `<项目根>/.codex/hooks/`，把 `hooks/codex/hooks.json` 复制为 `<项目根>/.codex/hooks.json`，并在 Codex 配置中启用 hooks 特性。详见 `hooks/codex/README.md`
 - **OpenCode**：无 shell hook 机制（官方只有 TypeScript 插件），skill-only 安装即可，详见 `hooks/opencode/README.md`
 
-验证（Claude Code）：`sh <plan-task 技能目录>/hooks/session-start.sh`（无状态文件时应静默退出）。`hooks/claude-code/` 下保留的 settings.json 仅作旧版手动安装参考。
+验证（任意平台）：`sh .agents/skills/plan-task/hooks/plan-doctor.sh` 逐项自检（Windows PowerShell 用同名 `.ps1`）。`hooks/claude-code/` 下保留的 settings.json 仅作旧版手动安装参考。
 
 ## 常见问题
 
 - **项目已经做了一半，能中途接入吗？** 能。plan-init 只创建缺失的模板文件，已存在的同名文件会停止并提示，不会覆盖；回答 4 个问题时按现状填即可
 - **已有 AGENTS.md 会被覆盖吗？** 不会，判断矩阵追加到文件末尾，原有内容不动
-- **想临时关掉 hooks？** 设环境变量 `PLANNING_HOOKS_DISABLED=1`，全部 hook 立即静默
+- **装完怎么验证 hooks 真的挂上了？** 跑自检脚本：`sh .agents/skills/plan-task/hooks/plan-doctor.sh`（Windows PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File .agents\skills\plan-task\hooks\plan-doctor.ps1`），逐项输出 PASS / WARN / FAIL，快速定位"静默无 hook"问题；`--global` 只查全局安装
+- **想临时关掉 hooks？** 设环境变量 `PLANNING_HOOKS_DISABLED=1`，全部 hook 立即静默（plan-doctor 是诊断工具，不受此变量影响）
 - **怎么更新已安装的技能？** 用 `npx skills update`——重新执行 `npx skills add` 不会自动更新已装技能
 - **日常要看哪个文件？** 平时只看 TASKS.md（做什么）；讨论结论查 FINDINGS.md；阶段进度看 ROADMAP.md 的 ▶；SPEC.md 和 INBOX.md 不需要日常看
 - **多久跑一次 plan-review？** 事件驱动：里程碑验收通过时必跑；其余随意——感觉计划乱了、INBOX 积压了就可以跑，单次 ≤30 分钟
