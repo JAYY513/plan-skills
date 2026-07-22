@@ -1,7 +1,10 @@
-# session-start hook：会话开始时输出当前计划状态。
+﻿# session-start hook：会话开始时输出当前计划状态。
 # 输出内容：当前里程碑（ROADMAP.md 中 ▶ 行）+ TASKS.md 进行中任务 + .planning/ 活跃工作区列表 + 主动提示行（进行中任务数 / INBOX 待裁决数）。
 # 本脚本只读状态文件并输出注入文本，绝不写状态文件；文件缺失时静默退出。
 # 禁用方式：设置环境变量 PLANNING_HOOKS_DISABLED=1，本脚本立即退出。
+
+# 输出统一为 UTF-8，避免 Windows PowerShell 默认 GBK 编码把 ▶ 等字符转成 ?
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 if ($env:PLANNING_HOOKS_DISABLED -eq "1") { exit 0 }
 

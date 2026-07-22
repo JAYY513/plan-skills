@@ -24,6 +24,12 @@ npx skills add JAYY513/plan-skills --skill plan-review
 
 支持 Claude Code、Codex、Cursor、Gemini CLI 等 60+ 兼容 Agent Skills 标准的 agent。
 
+装完后 hooks 按平台生效情况：
+
+- **Claude Code**：hooks 已随 plan-task 技能自动注册（写在技能 SKILL.md 的 frontmatter 里），装完即用，无需任何手动步骤
+- **Codex**：需手动复制 `hooks/codex/hooks.json` 与脚本，见 `hooks/codex/README.md`
+- **OpenCode**：无 shell hook 机制，为 skill-only 安装，纪律由 SKILL.md + AGENTS.md 保证，见 `hooks/opencode/README.md`
+
 ## 使用方式（自动驾驶）
 
 1. 新项目根目录：让 agent 运行一次 `plan-init`，回答 4 个问题，体系就位
@@ -43,22 +49,20 @@ npx skills add JAYY513/plan-skills --skill plan-review
 | "做完了" | 核对 DoD → 三合一归档（回填 FINDINGS + postmortem + 移入 done/）→ 标 ✅ | 不问 |
 | "周回顾 / 这个阶段做完了" | 跑 plan-review：验收、交接、裁决、体系自检 | 计划变更处确认 |
 
-## hook 最小安装（以 Claude Code 为例）
+## hooks 安装（按平台）
 
-```bash
-# 1. 复制脚本到项目
-cp hooks/claude-code/*.sh <项目根>/hooks/
+- **Claude Code**：无需操作。`npx skills add` 安装 plan-task 技能后，hooks 通过 SKILL.md frontmatter 自动注册，脚本随技能位于 `skills/plan-task/hooks/`
+- **Codex**：CLI 不安装仓库根的 `hooks/` 目录，需手动安装一次——把 plan-task 技能目录下 `hooks/` 的脚本复制到 `<项目根>/.codex/hooks/`，把 `hooks/codex/hooks.json` 复制为 `<项目根>/.codex/hooks.json`，并在 Codex 配置中启用 hooks 特性。详见 `hooks/codex/README.md`
+- **OpenCode**：无 shell hook 机制（官方只有 TypeScript 插件），skill-only 安装即可，详见 `hooks/opencode/README.md`
 
-# 2. 把 hooks/claude-code/settings.json 的 hooks 片段合并进 <项目根>/.claude/settings.json
-```
-
-Windows 无 Git Bash 时改用 `.ps1` 版本，command 写 `powershell -NoProfile -ExecutionPolicy Bypass -File hooks/session-start.ps1`。验证：`sh hooks/session-start.sh`（无状态文件时应静默退出）。Codex / OpenCode 见各自目录 README。
+验证（Claude Code）：`sh <plan-task 技能目录>/hooks/session-start.sh`（无状态文件时应静默退出）。`hooks/claude-code/` 下保留的 settings.json 仅作旧版手动安装参考。
 
 ## 常见问题
 
 - **项目已经做了一半，能中途接入吗？** 能。plan-init 只创建缺失的模板文件，已存在的同名文件会停止并提示，不会覆盖；回答 4 个问题时按现状填即可
 - **已有 AGENTS.md 会被覆盖吗？** 不会，判断矩阵追加到文件末尾，原有内容不动
 - **想临时关掉 hooks？** 设环境变量 `PLANNING_HOOKS_DISABLED=1`，全部 hook 立即静默
+- **怎么更新已安装的技能？** 用 `npx skills update`——重新执行 `npx skills add` 不会自动更新已装技能
 - **日常要看哪个文件？** 平时只看 TASKS.md（做什么）；讨论结论查 FINDINGS.md；阶段进度看 ROADMAP.md 的 ▶；SPEC.md 和 INBOX.md 不需要日常看
 - **多久跑一次 plan-review？** 事件驱动：里程碑验收通过时必跑；其余随意——感觉计划乱了、INBOX 积压了就可以跑，单次 ≤30 分钟
 
@@ -87,11 +91,11 @@ Windows 无 Git Bash 时改用 `.ps1` 版本，command 写 `powershell -NoProfil
 
 无 hook 时，上述纪律靠 AGENTS.md + agent 自觉执行；安装平台 hook 后由脚本在关键时机自动注入提醒、强制校验，行为等价只是强度更强。hook 脚本只读状态文件并输出提示文本，绝不写状态文件；设置环境变量 `PLANNING_HOOKS_DISABLED=1` 可一键全部禁用。
 
-| 平台 | 目录 |
+| 平台 | 安装方式 |
 |---|---|
-| Claude Code | `hooks/claude-code/`（settings.json 片段 + 脚本） |
-| Codex | `hooks/codex/` |
-| OpenCode | `hooks/opencode/` |
+| Claude Code | 随 plan-task 技能 frontmatter 自动注册（脚本在 `skills/plan-task/hooks/`）；`hooks/claude-code/` 仅保留旧版手动安装示例 |
+| Codex | `hooks/codex/`（hooks.json 模板 + 手动安装说明，脚本从技能目录复制） |
+| OpenCode | `hooks/opencode/`（无 shell hook 机制，skill-only + 可选 TS 插件说明） |
 
 5 个机制：
 
@@ -113,7 +117,7 @@ git config core.hooksPath .githooks
 sh tests/test-hooks.sh
 ```
 
-改动 `hooks/` 下脚本时三平台目录（claude-code / codex / opencode）必须同步，测试会抓到不一致的行为。
+hook 脚本单一来源在 `skills/plan-task/hooks/`（plan-task 是执行期技能，hooks 归它管；plan-init / plan-review 是初始化与回顾动作，不挂执行期 hooks）。改动脚本后直接改该目录即可，无需跨平台同步副本，测试会对该目录跑冒烟。
 
 ## 设计原则
 

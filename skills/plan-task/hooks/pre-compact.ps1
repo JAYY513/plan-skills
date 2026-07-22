@@ -1,7 +1,10 @@
-# pre-compact hook：上下文压缩前抢写状态，防漂移。
+﻿# pre-compact hook：上下文压缩前抢写状态，防漂移。
 # 输出内容：若存在活跃工作区，提醒先把进展 / 决策 / 「当前位置」落盘 progress.md 和 plan.md；TASKS.md 有进行中任务时顺带提醒确认 TASKS 状态已最新。
 # 本脚本只读状态文件并输出提示文本，绝不写状态文件；无活跃工作区时静默退出。
 # 禁用方式：设置环境变量 PLANNING_HOOKS_DISABLED=1，本脚本立即退出。
+
+# 输出统一为 UTF-8，避免 Windows PowerShell 默认 GBK 编码把 ▶ 等字符转成 ?
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 if ($env:PLANNING_HOOKS_DISABLED -eq "1") { exit 0 }
 

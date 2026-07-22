@@ -1,9 +1,9 @@
 #!/bin/sh
-# tests/test-hooks.sh：claude-code 平台 hooks 冒烟测试（其余两平台脚本内容相同，测一处即可）。
+# tests/test-hooks.sh：hooks 冒烟测试（脚本单一来源在 skills/plan-task/hooks/，测一处即可）。
 # 用 mktemp 临时目录构造场景，断言各 hook 的输出文本与 exit code；每用例一行 PASS/FAIL，结尾汇总，有 FAIL 则 exit 1。
 # 运行方式：在仓库根执行 sh tests/test-hooks.sh
 
-HOOKS_DIR="$(cd "$(dirname "$0")/../hooks/claude-code" && pwd)"
+HOOKS_DIR="$(cd "$(dirname "$0")/../skills/plan-task/hooks" && pwd)"
 
 PASS=0
 FAIL=0

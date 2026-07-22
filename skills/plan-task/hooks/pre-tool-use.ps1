@@ -1,7 +1,10 @@
-# pre-tool-use hook：执行类工具调用前注入当前任务上下文。
+﻿# pre-tool-use hook：执行类工具调用前注入当前任务上下文。
 # 输出内容：TASKS.md 进行中任务 + 各活跃工作区 plan.md 的「当前位置」摘要。
 # 本脚本只读状态文件并输出注入文本，绝不写状态文件；文件缺失时静默退出。
 # 禁用方式：设置环境变量 PLANNING_HOOKS_DISABLED=1，本脚本立即退出。
+
+# 输出统一为 UTF-8，避免 Windows PowerShell 默认 GBK 编码把 ▶ 等字符转成 ?
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 if ($env:PLANNING_HOOKS_DISABLED -eq "1") { exit 0 }
 

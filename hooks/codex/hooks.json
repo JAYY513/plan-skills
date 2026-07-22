@@ -1,0 +1,62 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh .codex/hooks/session-start.sh 2>/dev/null || true",
+            "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File .codex\\hooks\\session-start.ps1"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh .codex/hooks/pre-tool-use.sh 2>/dev/null || true",
+            "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File .codex\\hooks\\pre-tool-use.ps1"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh .codex/hooks/post-tool-use.sh 2>/dev/null || true",
+            "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File .codex\\hooks\\post-tool-use.ps1"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh .codex/hooks/pre-compact.sh 2>/dev/null || true",
+            "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File .codex\\hooks\\pre-compact.ps1"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh .codex/hooks/stop-gate.sh 2>/dev/null || true",
+            "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File .codex\\hooks\\stop-gate.ps1"
+          }
+        ]
+      }
+    ]
+  }
+}
