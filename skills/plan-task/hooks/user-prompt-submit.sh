@@ -1,6 +1,6 @@
 #!/bin/sh
-# user-prompt-submit hook：每次用户消息提交时重新注入精简计划状态（抗 context rot）。
-# 输出内容（比 session-start 精简，避免每轮上下文膨胀）：当前里程碑一行 + 进行中任务标题列表 + 活跃工作区一行提示。
+# user-prompt-submit hook：每次用户消息提交时重新注入计划状态（抗 context rot）。
+# 输出内容：当前里程碑一行 + TASKS.md「进行中」段原文（含 DoD 等完整内容，超 60 行截断）+ 活跃工作区一行提示。
 # 本脚本只读状态文件并输出注入文本，绝不写状态文件；文件缺失时静默退出。
 # 禁用方式：设置环境变量 PLANNING_HOOKS_DISABLED=1，本脚本立即退出。
 
@@ -17,12 +17,18 @@ if [ -f "$ROOT/ROADMAP.md" ]; then
   [ -n "$milestone" ] && echo "[plan] 当前里程碑：$milestone"
 fi
 
-# 进行中任务标题列表
+# 进行中任务：注入 TASKS.md「进行中」段原文（含 DoD），超 60 行截断
 if [ -f "$ROOT/TASKS.md" ]; then
-  tasks=$(sed -n '/^## 进行中/,/^## /p' "$ROOT/TASKS.md" | grep '^### ' | sed 's/^### */- /')
-  if [ -n "$tasks" ]; then
-    echo "[plan] 进行中任务："
-    echo "$tasks"
+  section=$(awk '/^## 进行中/{f=1;print;next} /^## /{if(f)exit} f' "$ROOT/TASKS.md")
+  if [ -n "$section" ] && echo "$section" | grep -q '^### '; then
+    echo "[plan] 进行中任务（TASKS.md 原文）："
+    lines=$(echo "$section" | wc -l)
+    if [ "$lines" -gt 60 ]; then
+      echo "$section" | head -60
+      echo "[plan] 进行中段过长已截断，详见 TASKS.md"
+    else
+      echo "$section"
+    fi
   fi
 fi
 

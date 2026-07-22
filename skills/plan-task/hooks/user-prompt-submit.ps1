@@ -1,5 +1,5 @@
-﻿# user-prompt-submit hook：每次用户消息提交时重新注入精简计划状态（抗 context rot）。
-# 输出内容（比 session-start 精简，避免每轮上下文膨胀）：当前里程碑一行 + 进行中任务标题列表 + 活跃工作区一行提示。
+﻿# user-prompt-submit hook：每次用户消息提交时重新注入计划状态（抗 context rot）。
+# 输出内容：当前里程碑一行 + TASKS.md「进行中」段原文（含 DoD 等完整内容，超 60 行截断）+ 活跃工作区一行提示。
 # 本脚本只读状态文件并输出注入文本，绝不写状态文件；文件缺失时静默退出。
 # 禁用方式：设置环境变量 PLANNING_HOOKS_DISABLED=1，本脚本立即退出。
 
@@ -20,19 +20,24 @@ if (Test-Path $roadmap) {
   if ($milestone) { Write-Output ("[plan] 当前里程碑：" + ($milestone.Line -replace '^#* ', '')) }
 }
 
-# 进行中任务标题列表
+# 进行中任务：注入 TASKS.md「进行中」段原文（含 DoD），超 60 行截断
 $tasks = Join-Path $Root "TASKS.md"
 if (Test-Path $tasks) {
   $inSection = $false
-  $items = @()
+  $section = @()
   foreach ($line in Get-Content $tasks -Encoding UTF8) {
-    if ($line -match '^## 进行中') { $inSection = $true; continue }
-    if ($line -match '^## ') { $inSection = $false }
-    if ($inSection -and $line -match '^### ') { $items += ("- " + ($line -replace '^### ', '')) }
+    if ($line -match '^## 进行中') { $inSection = $true; $section += $line; continue }
+    if ($line -match '^## ') { if ($inSection) { break } }
+    if ($inSection) { $section += $line }
   }
-  if ($items.Count -gt 0) {
-    Write-Output "[plan] 进行中任务："
-    $items | ForEach-Object { Write-Output $_ }
+  if ($section.Count -gt 0 -and ($section | Where-Object { $_ -match '^### ' })) {
+    Write-Output "[plan] 进行中任务（TASKS.md 原文）："
+    if ($section.Count -gt 60) {
+      $section | Select-Object -First 60 | ForEach-Object { Write-Output $_ }
+      Write-Output "[plan] 进行中段过长已截断，详见 TASKS.md"
+    } else {
+      $section | ForEach-Object { Write-Output $_ }
+    }
   }
 }
 

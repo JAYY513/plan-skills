@@ -101,10 +101,10 @@ npx skills add JAYY513/plan-skills --skill plan-review
 7 个机制：
 
 - **session-start**：会话开始注入当前里程碑 + 进行中任务 + 活跃工作区列表 + 主动提示行（进行中任务数 / INBOX 待裁决数）
-- **user-prompt-submit**：每次用户消息提交时重新注入精简计划状态（当前里程碑 + 进行中任务 + 活跃工作区一行），抗 context rot
+- **user-prompt-submit**：每次用户消息提交时重新注入进行中任务**原文**（TASKS.md「进行中」段含 DoD，超 60 行截断）+ 当前里程碑一行 + 活跃工作区一行，抗 context rot
 - **pre-tool-use**：执行类工具前注入当前任务 + 工作区 plan.md「当前位置」摘要
 - **post-tool-use**：写代码文件后提醒更新 progress.md / 勾选 plan.md 步骤
-- **stop-gate**：会话收尾校验——存在活跃工作区但任务未标 ✅ → 阻止并提示三合一动作
+- **stop-gate**：会话收尾双门校验——①存在活跃工作区但任务未标 ✅ → 阻止并提示三合一动作；②「进行中」仍有任务且无任何工作区痕迹 → 阻止并提示完成或移回待办
 - **pre-compact**：上下文压缩前提醒把进展 / 「当前位置」抢写进工作区，防漂移
 - **permission-request**（仅 Codex）：权限确认弹窗时注入一行当前任务上下文
 

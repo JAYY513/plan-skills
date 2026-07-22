@@ -157,7 +157,7 @@ ok=0
 [ -z "$out" ] || ok=1
 report "user-prompt-submit：空目录静默 exit 0" $ok
 
-# 有状态：输出里程碑 + 任务列表 + 工作区一行，且不含 INBOX 计数提示行
+# 有状态：输出里程碑 + 进行中段原文（含 DoD）+ 工作区一行，且不含 INBOX 计数提示行
 dir=$(mk)
 cat > "$dir/ROADMAP.md" <<'EOF'
 # ROADMAP
@@ -170,6 +170,15 @@ cat > "$dir/TASKS.md" <<'EOF'
 ## 进行中
 
 ### 任务甲
+
+- DoD：点击中断后输出立刻停止，手动验证通过
+- 备注：这是一条完整备注
+
+## 已拆好（待做）
+
+### 任务乙
+
+- DoD：不应出现的待办 DoD
 EOF
 mkdir -p "$dir/.planning/2026-07-18-demo-task"
 out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
@@ -177,13 +186,46 @@ rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
 echo "$out" | grep -q '当前里程碑：▶ M1：测试里程碑' || ok=1
-echo "$out" | grep -q '进行中任务：' || ok=1
-echo "$out" | grep -q '任务甲' || ok=1
+echo "$out" | grep -q '进行中任务（TASKS.md 原文）：' || ok=1
+echo "$out" | grep -q '### 任务甲' || ok=1
+echo "$out" | grep -q 'DoD：点击中断后输出立刻停止，手动验证通过' || ok=1
 echo "$out" | grep -q '活跃工作区： 2026-07-18-demo-task' || ok=1
+echo "$out" | grep -q '任务乙' && ok=1
 echo "$out" | grep -q 'INBOX' && ok=1
-report "user-prompt-submit：精简输出正确且不含 INBOX 计数" $ok
+report "user-prompt-submit：进行中段原文注入（含 DoD）且不越界" $ok
+
+# 进行中段超 60 行 → 截断并附提示行
+dir=$(mk)
+{
+  echo '# TASKS'
+  echo ''
+  echo '## 进行中'
+  echo ''
+  echo '### 长任务'
+  i=0; while [ $i -lt 70 ]; do echo "- 细节行 $i"; i=$((i + 1)); done
+  echo ''
+  echo '## 已拆好（待做）'
+  echo ''
+  echo '### 不应出现'
+} > "$dir/TASKS.md"
+out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+echo "$out" | grep -q '进行中段过长已截断，详见 TASKS.md' || ok=1
+echo "$out" | grep -q '细节行 69' && ok=1
+echo "$out" | grep -q '不应出现' && ok=1
+report "user-prompt-submit：进行中段超 60 行截断" $ok
 
 # 禁用变量 → 静默 exit 0
+dir=$(mk)
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+### 任务甲
+EOF
 out=$(PLANNING_HOOKS_DISABLED=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
 rc=$?
 ok=0
@@ -276,6 +318,62 @@ echo "$out" | grep -q 'FAIL 0' || ok=1
 echo "$out" | grep -q '\[PASS\] Claude Code hooks 注册' || ok=1
 echo "$out" | grep -q '\[PASS\] Codex hooks 注册' || ok=1
 report "plan-doctor：完整假安装全 PASS 且 exit 0" $ok
+
+# ── 用例 11：stop-gate 门二（未完成阻止）───────────────────────
+# 有进行中任务且无活跃工作区 → 阻止 exit 2
+dir=$(mk)
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+### 任务甲
+
+## 已拆好（待做）
+
+### 任务乙
+EOF
+out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+rc=$?
+ok=0
+[ $rc -eq 2 ] || ok=1
+echo "$out" | grep -q '阻止收尾：TASKS.md「进行中」仍有 1 个未完成任务' || ok=1
+echo "$out" | grep -q '任务甲' || ok=1
+echo "$out" | grep -q '任务乙' && ok=1
+echo "$out" | grep -q '下一步' || ok=1
+report "stop-gate 门二：进行中任务无工作区 → 阻止 exit 2" $ok
+
+# 干净会话：进行中为空（任务在待办区）→ 静默 exit 0
+dir=$(mk)
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 已拆好（待做）
+
+### 任务乙
+EOF
+out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+[ -z "$out" ] || ok=1
+report "stop-gate 门二：干净会话静默 exit 0" $ok
+
+# 门二禁用变量 → 静默 exit 0
+dir=$(mk)
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+### 任务甲
+EOF
+out=$(PLANNING_HOOKS_DISABLED=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+[ -z "$out" ] || ok=1
+report "stop-gate 门二：PLANNING_HOOKS_DISABLED=1 静默 exit 0" $ok
 
 # ── 汇总 ───────────────────────────────────────────────────────
 echo "-----"
