@@ -82,35 +82,50 @@ for f in $hj_candidates; do
 done
 
 if [ -n "$hj_found" ]; then
-  # 项目级与全局同时存在 → 重复触发警告
-  n_hj=$(echo $hj_found | wc -w)
-  [ "$n_hj" -ge 2 ] && \
-    warn "Codex hooks 注册: 项目级与全局 hooks.json 同时存在，hook 会重复触发，请只保留一处"
+  # 逐文件检查 JSON 合法性并标记是否含 plan-task
+  pt_files=""
   for f in $hj_found; do
     [ -f "$f" ] || continue
-    if ! grep -q 'plan-task' "$f"; then
-      fail "Codex hooks 注册: $f 不含 plan-task 路径"
-      continue
-    fi
-    PY=""
-    command -v python3 >/dev/null 2>&1 && PY=python3
-    [ -z "$PY" ] && command -v python >/dev/null 2>&1 && PY=python
-    if [ -n "$PY" ]; then
-      if "$PY" -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$f" >/dev/null 2>&1; then
-        pass "Codex hooks 注册: $f 存在、含 plan-task、JSON 合法"
+    if grep -q 'plan-task' "$f"; then
+      pt_files="$pt_files $f"
+      PY=""
+      command -v python3 >/dev/null 2>&1 && PY=python3
+      [ -z "$PY" ] && command -v python >/dev/null 2>&1 && PY=python
+      if [ -n "$PY" ]; then
+        if "$PY" -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$f" >/dev/null 2>&1; then
+          pass "Codex hooks 注册: $f 存在、含 plan-task、JSON 合法"
+        else
+          fail "Codex hooks 注册: $f 不是合法 JSON"
+        fi
       else
-        fail "Codex hooks 注册: $f 不是合法 JSON"
+        warn "Codex hooks 注册: $f 存在且含 plan-task（无 python，跳过 JSON 合法性校验）"
       fi
-    else
-      warn "Codex hooks 注册: $f 存在且含 plan-task（无 python，跳过 JSON 合法性校验）"
     fi
   done
-  # hooks 特性开关
-  cfg="$HOME/.codex/config.toml"
-  if [ -f "$cfg" ] && grep -q 'hooks *= *true' "$cfg"; then
-    pass "Codex hooks 特性: $cfg 含 hooks = true"
+  # 重复触发警告：仅当两处都注册了 plan-task
+  n_pt=$(echo $pt_files | wc -w)
+  [ "$n_pt" -ge 2 ] && \
+    warn "Codex hooks 注册: 项目级与全局 hooks.json 都注册了 plan-task，hook 会重复触发，请只保留一处"
+  # plan-task 注册判定：任一处含 plan-task 即可；全局不含仅作信息行
+  if [ -n "$pt_files" ]; then
+    for f in $hj_found; do
+      [ -f "$f" ] || continue
+      case " $pt_files " in
+        *" $f "*) ;;
+        *) pass "Codex hooks 注册: $f 未注册 plan-task（全局未安装 Codex hooks，可选）" ;;
+      esac
+    done
   else
-    warn "Codex hooks 特性: 未在 $cfg 找到 hooks = true（请在 [features] 节配置，或用 codex features list 验证）"
+    fail "Codex hooks 注册: 项目级与全局 hooks.json 均不含 plan-task 路径（参考 hooks/codex/README.md 安装）"
+  fi
+  # hooks 特性开关（仅在存在 plan-task 注册时检查）
+  if [ -n "$pt_files" ]; then
+    cfg="$HOME/.codex/config.toml"
+    if [ -f "$cfg" ] && grep -q 'hooks *= *true' "$cfg"; then
+      pass "Codex hooks 特性: $cfg 含 hooks = true"
+    else
+      warn "Codex hooks 特性: 未在 $cfg 找到 hooks = true（请在 [features] 节配置，或用 codex features list 验证）"
+    fi
   fi
 else
   warn "Codex hooks 注册: 未发现 hooks.json（使用 Codex 时参考 hooks/codex/README.md 安装；不用 Codex 可忽略）"

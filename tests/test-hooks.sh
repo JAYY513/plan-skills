@@ -375,6 +375,48 @@ ok=0
 [ -z "$out" ] || ok=1
 report "stop-gate 门二：PLANNING_HOOKS_DISABLED=1 静默 exit 0" $ok
 
+# ── 用例 12：plan-doctor：全局 hooks.json 属于其他工具 → 不 FAIL 不 WARN ──
+dir=$(mk)
+fakehome=$(mk)
+mkdir -p "$dir/.agents/skills/plan-task/hooks" "$dir/.codex" "$fakehome/.codex"
+cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.ps1 "$dir/.agents/skills/plan-task/hooks/"
+cp "$(cd "$(dirname "$0")/../skills/plan-task" && pwd)/SKILL.md" "$dir/.agents/skills/plan-task/SKILL.md"
+cat > "$dir/.codex/hooks.json" <<'EOF'
+{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "sh .agents/skills/plan-task/hooks/session-start.sh" } ] } ] } }
+EOF
+cat > "$fakehome/.codex/hooks.json" <<'EOF'
+{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "headroom wrap" } ] } ] } }
+EOF
+printf '[features]\nhooks = true\n' > "$fakehome/.codex/config.toml"
+out=$(cd "$dir" && HOME="$fakehome" sh "$HOOKS_DIR/plan-doctor.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || { ok=1; echo "$out"; }
+echo "$out" | grep -q '全局未安装 Codex hooks' || ok=1
+echo "$out" | grep -q '重复触发' && ok=1
+echo "$out" | grep -q '\[FAIL\] Codex' && ok=1
+report "plan-doctor：全局 hooks.json 属其他工具 → 信息行且无重复警告" $ok
+
+# ── 用例 13：plan-doctor：两处都注册 plan-task → WARN 重复触发 ──
+dir=$(mk)
+fakehome=$(mk)
+mkdir -p "$dir/.agents/skills/plan-task/hooks" "$dir/.codex" "$fakehome/.codex"
+cp "$HOOKS_DIR"/*.sh "$HOOKS_DIR"/*.ps1 "$dir/.agents/skills/plan-task/hooks/"
+cp "$(cd "$(dirname "$0")/../skills/plan-task" && pwd)/SKILL.md" "$dir/.agents/skills/plan-task/SKILL.md"
+cat > "$dir/.codex/hooks.json" <<'EOF'
+{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "sh .agents/skills/plan-task/hooks/session-start.sh" } ] } ] } }
+EOF
+cat > "$fakehome/.codex/hooks.json" <<'EOF'
+{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "sh ~/.codex/skills/plan-task/hooks/session-start.sh" } ] } ] } }
+EOF
+printf '[features]\nhooks = true\n' > "$fakehome/.codex/config.toml"
+out=$(cd "$dir" && HOME="$fakehome" sh "$HOOKS_DIR/plan-doctor.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || { ok=1; echo "$out"; }
+echo "$out" | grep -q '都注册了 plan-task，hook 会重复触发' || ok=1
+report "plan-doctor：两处都注册 plan-task → WARN 重复触发" $ok
+
 # ── 汇总 ───────────────────────────────────────────────────────
 echo "-----"
 echo "合计 $((PASS + FAIL)) 个用例：PASS $PASS，FAIL $FAIL"

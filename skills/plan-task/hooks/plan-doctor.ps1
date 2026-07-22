@@ -84,27 +84,42 @@ foreach ($f in $hjCandidates) {
 }
 
 if ($hjFound.Count -gt 0) {
-  if ($hjFound.Count -ge 2) {
-    Warn "Codex hooks 注册: 项目级与全局 hooks.json 同时存在，hook 会重复触发，请只保留一处"
-  }
+  # 逐文件检查 JSON 合法性并标记是否含 plan-task
+  $ptFiles = @()
   foreach ($f in $hjFound) {
     $raw = Get-Content $f -Raw -Encoding UTF8
-    if ($raw -notmatch 'plan-task') {
-      Fail "Codex hooks 注册: $f 不含 plan-task 路径"
-      continue
-    }
-    try {
-      $null = $raw | ConvertFrom-Json -ErrorAction Stop
-      Pass "Codex hooks 注册: $f 存在、含 plan-task、JSON 合法"
-    } catch {
-      Fail "Codex hooks 注册: $f 不是合法 JSON"
+    if ($raw -match 'plan-task') {
+      $ptFiles += $f
+      try {
+        $null = $raw | ConvertFrom-Json -ErrorAction Stop
+        Pass "Codex hooks 注册: $f 存在、含 plan-task、JSON 合法"
+      } catch {
+        Fail "Codex hooks 注册: $f 不是合法 JSON"
+      }
     }
   }
-  $cfg = "$HOME/.codex/config.toml"
-  if ((Test-Path $cfg) -and ((Get-Content $cfg -Raw -Encoding UTF8) -match 'hooks\s*=\s*true')) {
-    Pass "Codex hooks 特性: $cfg 含 hooks = true"
+  # 重复触发警告：仅当两处都注册了 plan-task
+  if ($ptFiles.Count -ge 2) {
+    Warn "Codex hooks 注册: 项目级与全局 hooks.json 都注册了 plan-task，hook 会重复触发，请只保留一处"
+  }
+  # plan-task 注册判定：任一处含 plan-task 即可；全局不含仅作信息行
+  if ($ptFiles.Count -gt 0) {
+    foreach ($f in $hjFound) {
+      if ($ptFiles -notcontains $f) {
+        Pass "Codex hooks 注册: $f 未注册 plan-task（全局未安装 Codex hooks，可选）"
+      }
+    }
   } else {
-    Warn "Codex hooks 特性: 未在 $cfg 找到 hooks = true（请在 [features] 节配置，或用 codex features list 验证）"
+    Fail "Codex hooks 注册: 项目级与全局 hooks.json 均不含 plan-task 路径（参考 hooks/codex/README.md 安装）"
+  }
+  # hooks 特性开关（仅在存在 plan-task 注册时检查）
+  if ($ptFiles.Count -gt 0) {
+    $cfg = "$HOME/.codex/config.toml"
+    if ((Test-Path $cfg) -and ((Get-Content $cfg -Raw -Encoding UTF8) -match 'hooks\s*=\s*true')) {
+      Pass "Codex hooks 特性: $cfg 含 hooks = true"
+    } else {
+      Warn "Codex hooks 特性: 未在 $cfg 找到 hooks = true（请在 [features] 节配置，或用 codex features list 验证）"
+    }
   }
 } else {
   Warn "Codex hooks 注册: 未发现 hooks.json（使用 Codex 时参考 hooks/codex/README.md 安装；不用 Codex 可忽略）"
