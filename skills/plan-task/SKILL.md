@@ -20,6 +20,10 @@ hooks:
     - hooks:
         - type: command
           command: "sh \"${CLAUDE_SKILL_DIR}/hooks/pre-compact.sh\" 2>/dev/null || true"
+  UserPromptSubmit:
+    - hooks:
+        - type: command
+          command: "sh \"${CLAUDE_SKILL_DIR}/hooks/user-prompt-submit.sh\" 2>/dev/null || true"
   Stop:
     - hooks:
         - type: command

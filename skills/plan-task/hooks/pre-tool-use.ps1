@@ -14,7 +14,7 @@ $tasks = Join-Path $Root "TASKS.md"
 if (Test-Path $tasks) {
   $inSection = $false
   $items = @()
-  foreach ($line in Get-Content $tasks) {
+  foreach ($line in Get-Content $tasks -Encoding UTF8) {
     if ($line -match '^## 进行中') { $inSection = $true; continue }
     if ($line -match '^## ') { $inSection = $false }
     if ($inSection -and $line -match '^### ') { $items += ("- " + ($line -replace '^### ', '')) }
@@ -32,7 +32,7 @@ if (Test-Path $planning) {
     if (Test-Path $plan) {
       $inPos = $false
       $pos = @()
-      foreach ($line in Get-Content $plan) {
+      foreach ($line in Get-Content $plan -Encoding UTF8) {
         if ($line -match '^## 当前位置') { $inPos = $true; continue }
         if ($line -match '^## ') { $inPos = $false }
         if ($inPos -and $line -match '^- ') { $pos += $line }

@@ -24,7 +24,7 @@ $tasks = Join-Path $Root "TASKS.md"
 if (Test-Path $tasks) {
   $inSec = $false
   $taskCount = 0
-  foreach ($line in Get-Content $tasks) {
+  foreach ($line in Get-Content $tasks -Encoding UTF8) {
     if ($line -match '^## 进行中') { $inSec = $true; continue }
     if ($line -match '^## ') { $inSec = $false }
     if ($inSec -and $line -match '^### ') { $taskCount++ }

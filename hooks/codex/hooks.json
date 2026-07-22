@@ -47,6 +47,28 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh .agents/skills/plan-task/hooks/user-prompt-submit.sh 2>/dev/null || true",
+            "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File .agents\\skills\\plan-task\\hooks\\user-prompt-submit.ps1"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh .agents/skills/plan-task/hooks/permission-request.sh 2>/dev/null || true",
+            "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File .agents\\skills\\plan-task\\hooks\\permission-request.ps1"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

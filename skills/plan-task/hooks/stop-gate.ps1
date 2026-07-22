@@ -14,7 +14,7 @@ $planning = Join-Path $Root ".planning"
 if (-not (Test-Path $planning)) { exit 0 }
 
 $tasks = Join-Path $Root "TASKS.md"
-$tasksContent = if (Test-Path $tasks) { Get-Content $tasks -Raw } else { "" }
+$tasksContent = if (Test-Path $tasks) { Get-Content $tasks -Encoding UTF8 -Raw } else { "" }
 
 $warn = @()
 Get-ChildItem $planning -Directory | Where-Object { $_.Name -ne "done" } | ForEach-Object {
@@ -27,7 +27,7 @@ Get-ChildItem $planning -Directory | Where-Object { $_.Name -ne "done" } | ForEa
   if (-not $doneMark) {
     $progress = Join-Path $_.FullName "progress.md"
     if (Test-Path $progress) {
-      $pc = Get-Content $progress -Raw
+      $pc = Get-Content $progress -Encoding UTF8 -Raw
       if ($pc -match '本文档为过程记录' -and $pc -notmatch '<F\? 编号>') { $doneMark = $true }
     }
   }

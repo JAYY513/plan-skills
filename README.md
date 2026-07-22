@@ -97,13 +97,17 @@ npx skills add JAYY513/plan-skills --skill plan-review
 | Codex | `hooks/codex/`（hooks.json 模板 + 手动安装说明，脚本从技能目录复制） |
 | OpenCode | `hooks/opencode/`（无 shell hook 机制，skill-only + 可选 TS 插件说明） |
 
-5 个机制：
+7 个机制：
 
 - **session-start**：会话开始注入当前里程碑 + 进行中任务 + 活跃工作区列表 + 主动提示行（进行中任务数 / INBOX 待裁决数）
+- **user-prompt-submit**：每次用户消息提交时重新注入精简计划状态（当前里程碑 + 进行中任务 + 活跃工作区一行），抗 context rot
 - **pre-tool-use**：执行类工具前注入当前任务 + 工作区 plan.md「当前位置」摘要
 - **post-tool-use**：写代码文件后提醒更新 progress.md / 勾选 plan.md 步骤
 - **stop-gate**：会话收尾校验——存在活跃工作区但任务未标 ✅ → 阻止并提示三合一动作
 - **pre-compact**：上下文压缩前提醒把进展 / 「当前位置」抢写进工作区，防漂移
+- **permission-request**（仅 Codex）：权限确认弹窗时注入一行当前任务上下文
+
+平台差异：Claude Code 挂前 6 个（无 PermissionRequest 机制，与参考项目一致不挂）；Codex 7 个全挂（见 `hooks/codex/hooks.json`）；OpenCode 无 shell hook 机制。
 
 各平台的安装方式见对应目录的 README.md。未匹配到平台时跳过不报错，靠 AGENTS.md 纪律达到等价行为，强度较弱。
 

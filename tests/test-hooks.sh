@@ -147,6 +147,103 @@ ok=0
 [ -z "$out" ] || ok=1
 report "pre-compact：无工作区静默 exit 0" $ok
 
+# ── 用例 7：user-prompt-submit ─────────────────────────────────
+# 空目录静默 exit 0
+dir=$(mk)
+out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+[ -z "$out" ] || ok=1
+report "user-prompt-submit：空目录静默 exit 0" $ok
+
+# 有状态：输出里程碑 + 任务列表 + 工作区一行，且不含 INBOX 计数提示行
+dir=$(mk)
+cat > "$dir/ROADMAP.md" <<'EOF'
+# ROADMAP
+
+## ▶ M1：测试里程碑
+EOF
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+### 任务甲
+EOF
+mkdir -p "$dir/.planning/2026-07-18-demo-task"
+out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+echo "$out" | grep -q '当前里程碑：▶ M1：测试里程碑' || ok=1
+echo "$out" | grep -q '进行中任务：' || ok=1
+echo "$out" | grep -q '任务甲' || ok=1
+echo "$out" | grep -q '活跃工作区： 2026-07-18-demo-task' || ok=1
+echo "$out" | grep -q 'INBOX' && ok=1
+report "user-prompt-submit：精简输出正确且不含 INBOX 计数" $ok
+
+# 禁用变量 → 静默 exit 0
+out=$(PLANNING_HOOKS_DISABLED=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+[ -z "$out" ] || ok=1
+report "user-prompt-submit：PLANNING_HOOKS_DISABLED=1 静默 exit 0" $ok
+
+# ── 用例 8：permission-request ─────────────────────────────────
+# 空目录静默 exit 0
+dir=$(mk)
+out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/permission-request.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+[ -z "$out" ] || ok=1
+report "permission-request：空目录静默 exit 0" $ok
+
+# 有进行中任务 → 输出一行任务提示；无进行中任务 → 静默
+dir=$(mk)
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+### 任务甲
+
+## 已拆好（待做）
+
+### 任务乙
+EOF
+out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/permission-request.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+echo "$out" | grep -q '当前进行中任务：任务甲' || ok=1
+echo "$out" | grep -q '任务乙' && ok=1
+report "permission-request：输出首个进行中任务一行提示" $ok
+
+dir=$(mk)
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 已拆好（待做）
+
+### 任务乙
+EOF
+out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/permission-request.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+[ -z "$out" ] || ok=1
+report "permission-request：无进行中任务静默 exit 0" $ok
+
+out=$(PLANNING_HOOKS_DISABLED=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/permission-request.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+[ -z "$out" ] || ok=1
+report "permission-request：PLANNING_HOOKS_DISABLED=1 静默 exit 0" $ok
+
 # ── 汇总 ───────────────────────────────────────────────────────
 echo "-----"
 echo "合计 $((PASS + FAIL)) 个用例：PASS $PASS，FAIL $FAIL"

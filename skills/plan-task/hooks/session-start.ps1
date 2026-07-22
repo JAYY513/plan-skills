@@ -15,7 +15,7 @@ if (-not ((Test-Path (Join-Path $Root "ROADMAP.md")) -or (Test-Path (Join-Path $
 
 $roadmap = Join-Path $Root "ROADMAP.md"
 if (Test-Path $roadmap) {
-  $milestone = Select-String -Path $roadmap -Pattern "^## *▶" | Select-Object -First 1
+  $milestone = Select-String -Path $roadmap -Encoding UTF8 -Pattern "^## *▶" | Select-Object -First 1
   if ($milestone) { Write-Output ("[plan] 当前里程碑：" + ($milestone.Line -replace '^#* ', '')) }
 }
 
@@ -23,7 +23,7 @@ $tasks = Join-Path $Root "TASKS.md"
 if (Test-Path $tasks) {
   $inSection = $false
   $items = @()
-  foreach ($line in Get-Content $tasks) {
+  foreach ($line in Get-Content $tasks -Encoding UTF8) {
     if ($line -match '^## 进行中') { $inSection = $true; continue }
     if ($line -match '^## ') { $inSection = $false }
     if ($inSection -and $line -match '^### ') { $items += ("- " + ($line -replace '^### ', '')) }
@@ -46,7 +46,7 @@ $taskCount = 0
 $tasksFile = Join-Path $Root "TASKS.md"
 if (Test-Path $tasksFile) {
   $inSec = $false
-  foreach ($line in Get-Content $tasksFile) {
+  foreach ($line in Get-Content $tasksFile -Encoding UTF8) {
     if ($line -match '^## 进行中') { $inSec = $true; continue }
     if ($line -match '^## ') { $inSec = $false }
     if ($inSec -and $line -match '^### ') { $taskCount++ }
@@ -56,7 +56,7 @@ $inboxCount = 0
 $inbox = Join-Path $Root "INBOX.md"
 if (Test-Path $inbox) {
   $inSec = $false
-  foreach ($line in Get-Content $inbox) {
+  foreach ($line in Get-Content $inbox -Encoding UTF8) {
     if ($line -match '^## 待裁决') { $inSec = $true; continue }
     if ($line -match '^## ') { $inSec = $false }
     if ($inSec -and $line -match '^- \[ \]') { $inboxCount++ }
