@@ -27,7 +27,7 @@ npx skills add JAYY513/plan-skills --skill plan-review
 装完后 hooks 按平台生效情况：
 
 - **Claude Code**：hooks 已随 plan-task 技能自动注册（写在技能 SKILL.md 的 frontmatter 里），装完即用，无需任何手动步骤
-- **Codex**：需手动复制 `hooks/codex/hooks.json` 与脚本，见 `hooks/codex/README.md`
+- **Codex**：需手动两步（一次性）——把 `hooks/codex/hooks.json` 复制为 `<项目根>/.codex/hooks.json`（模板已直接指向技能目录里的脚本，**脚本无需复制**），并在 `~/.codex/config.toml` 的 `[features]` 节加 `hooks = true`。见 `hooks/codex/README.md`
 - **OpenCode**：无 shell hook 机制，为 skill-only 安装，纪律由 SKILL.md + AGENTS.md 保证，见 `hooks/opencode/README.md`
 
 ## 使用方式（自动驾驶）
@@ -52,7 +52,7 @@ npx skills add JAYY513/plan-skills --skill plan-review
 ## hooks 安装（按平台）
 
 - **Claude Code**：无需操作。`npx skills add` 安装 plan-task 技能后，hooks 通过 SKILL.md frontmatter 自动注册，脚本随技能位于 `skills/plan-task/hooks/`
-- **Codex**：CLI 不安装仓库根的 `hooks/` 目录，需手动安装一次——把 plan-task 技能目录下 `hooks/` 的脚本复制到 `<项目根>/.codex/hooks/`，把 `hooks/codex/hooks.json` 复制为 `<项目根>/.codex/hooks.json`，并在 Codex 配置中启用 hooks 特性。详见 `hooks/codex/README.md`
+- **Codex**：`npx skills add` 只装技能目录，不会写 Codex 配置，需手动两步（一次性）——① 把 `hooks/codex/hooks.json` 复制为 `<项目根>/.codex/hooks.json`（模板已直接指向 `.agents/skills/plan-task/hooks/` 里的脚本，脚本随技能自动就位、随 `npx skills update` 更新，**无需复制脚本**）；② 在 `~/.codex/config.toml` 的 `[features]` 节加 `hooks = true`。全局安装见 `hooks/codex/README.md`
 - **OpenCode**：无 shell hook 机制（官方只有 TypeScript 插件），skill-only 安装即可，详见 `hooks/opencode/README.md`
 
 验证（任意平台）：`sh .agents/skills/plan-task/hooks/plan-doctor.sh` 逐项自检（Windows PowerShell 用同名 `.ps1`）。`hooks/claude-code/` 下保留的 settings.json 仅作旧版手动安装参考。
