@@ -89,8 +89,11 @@ if [ -n "$hj_found" ]; then
     if grep -q 'plan-task' "$f"; then
       pt_files="$pt_files $f"
       PY=""
-      command -v python3 >/dev/null 2>&1 && PY=python3
-      [ -z "$PY" ] && command -v python >/dev/null 2>&1 && PY=python
+      for c in python3 python; do
+        command -v "$c" >/dev/null 2>&1 || continue
+        # Windows 应用商店占位 stub 能被 command -v 找到但无法执行，先试跑再采纳
+        "$c" -c "import json" >/dev/null 2>&1 && { PY=$c; break; }
+      done
       if [ -n "$PY" ]; then
         if "$PY" -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$f" >/dev/null 2>&1; then
           pass "Codex hooks 注册: $f 存在、含 plan-task、JSON 合法"
