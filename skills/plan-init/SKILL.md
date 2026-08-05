@@ -15,7 +15,7 @@ description: 为项目初始化分层计划体系（vibe coding 防计划混乱�
 - ROADMAP.md = 路标：3~5 个里程碑 + 已完成里程碑的产出存档
 - TASKS.md = 施工图：仅当前里程碑的任务，完成的待归档不删
 - INBOX.md = 停车场：新想法、待裁决项
-- FINDINGS.md = 知识库：调研结论、重要发现、失败尝试，跨会话不丢
+- FINDINGS.md = 知识库：调研结论、重要发现、失败尝试，跨会话不丢；「索引 + 热区」两层，平时只读索引，历史条目全文由 plan-review 分诊进 FINDINGS.archive.md
 
 ## 执行步骤
 

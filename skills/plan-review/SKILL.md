@@ -9,7 +9,7 @@ description: 事件驱动的计划变更门，防止计划过期和文档腐化�
 
 ## 读取文件
 
-ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、FINDINGS.md、AGENTS.md。缺失 → 提示先运行 plan-init。
+ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文读；FINDINGS.md 读「索引」区与本次相关的条目（按编号取全文）。缺失 → 提示先运行 plan-init。
 
 ## 执行步骤（按顺序）
 
@@ -22,7 +22,14 @@ ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、FINDINGS.md、AGENTS.md。缺失 �
 不是挪个 ▶ 就完事，按顺序完成四件事：
 1. **写小结**：在该里程碑下填「实际产出」（实际建成了什么，一句话）和「遗留问题」（没做/没定的事）
 2. **归档**：把 TASKS.md「已完成（待归档）」整体移入该里程碑的「已完成存档」，清空该区——从此"这个阶段做了什么"永久可查
-3. **读 FINDINGS**：列出 FINDINGS.md 中所有标注影响下一里程碑的条目（含失败尝试），作为下一阶段的输入
+3. **读 FINDINGS 并分诊**：
+   - 列出 FINDINGS.md 热区与 FINDINGS.archive.md 中所有标注影响下一里程碑的条目（含失败尝试），作为下一阶段的输入
+   - 对刚完成里程碑相关的条目逐条分诊（四选一；编号永不删除、永不复用，被推翻的条目只改状态）：
+     - **毕业**：结论已固化为永久规则（已写入 SPEC/AGENTS/docs）→ 条目收缩成一行存根，指向规则所在处
+     - **归档**：全文移入 FINDINGS.archive.md 对应里程碑小节，FINDINGS.md 索引保留该行
+     - **保留**：仍影响下一里程碑 → 留在 FINDINGS.md 热区
+     - **导出**：跨项目可复用的外部知识（库坑、通用模式、调研方法）→ 写入个人知识库，条目状态标「已导出」
+   - 分诊后同步更新 FINDINGS.md 顶部索引；热区超过 40 条或 400 行 → 本次强制分诊
 4. **启动下一里程碑**：将 ▶ 移到下一个里程碑，结合其验收标准 + 上一步的 FINDINGS + 遗留问题，反推出第一批任务（含必要的调研探针，带时间盒和 DoD）录入 TASKS.md——「已拆好（待做）」位置即顺序，按建议执行顺序自上而下排列，确保「进行中」+「已拆好」≥ 2 个；MVP 桶已清空时，从 P0 桶取下一里程碑内容（并在 ROADMAP 中标注该里程碑属于哪个桶）
 - 提示用户庆祝一下
 
@@ -50,7 +57,7 @@ ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、FINDINGS.md、AGENTS.md。缺失 �
 检查 AGENTS.md、SPEC.md、ROADMAP.md、TASKS.md、FINDINGS.md，找出：
 - 同一事实出现在多处 → 保留一处，其余改为引用
 - 相互矛盾的内容 → 以 SPEC.md 为准修正，并询问用户
-- 明显过期的内容（已否决的方案、已完成事项的残留描述）→ 删除；FINDINGS.md 中被推翻的条目不删，把状态改为"已被 F? 推翻"
+- 明显过期的内容（已否决的方案、已完成事项的残留描述）→ 删除；FINDINGS.md 中被推翻的条目不删，把状态改为"已被 F? 推翻"（无论该条目在热区还是归档）
 
 ### 7. 体系自检（自进化，最后 5 分钟）
 不只 review 计划，还要 review "体系自己"——计划内容会演化，工作方式也要演化：
