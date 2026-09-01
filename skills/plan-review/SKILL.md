@@ -1,6 +1,7 @@
 ---
 name: plan-review
 description: 事件驱动的计划变更门，防止计划过期和文档腐化。当用户说"周回顾""weekly review""review 一下进度""清一下 INBOX""计划好像乱了帮我理一理""这个阶段做完了""里程碑做完了"，或里程碑验收通过、计划失序需要重整时使用。负责验收里程碑进度、里程碑交接（归档产出 + 启动下一里程碑）、清理停滞任务、裁决 INBOX、补充任务队列、文档查重，并输出一页总结。曾用名：weekly-review。
+disable-model-invocation: true
 ---
 
 # plan-review：计划变更门（周回顾）
@@ -39,6 +40,7 @@ ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文读；FINDINGS.md �
 
 ### 3. INBOX 裁决
 - 逐条处理「待裁决」：并入当前里程碑（转 TASKS）/ 归入 ROADMAP 的 P0 或 P1 桶 / 删除
+- 并入当前里程碑的条目，先追问澄清到无歧义（边界、验收方式、不做什么）再转 TASKS——裁决不是搬运，需求没问透不许进队列
 - 引用了 FINDINGS 编号的条目：先读对应 FINDINGS 条目再裁决
 - 每条裁决移入「已裁决」存档并写一句原因
 - 🔴 标记的必须处理，⚪ 的可以批量留置

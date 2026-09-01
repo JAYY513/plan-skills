@@ -1,6 +1,7 @@
 ---
 name: plan-init
 description: 为项目初始化分层计划体系（vibe coding 防计划混乱）。当用户说"初始化计划体系""开始新项目规划""帮我建立 SPEC/ROADMAP/TASKS""setup 计划文档"或在新项目根目录准备开始开发时使用。会创建 SPEC.md、ROADMAP.md、INBOX.md、TASKS.md、FINDINGS.md 五个状态文件，并向 AGENTS.md 注入计划纪律段落。每个项目只运行一次。
+disable-model-invocation: true
 ---
 
 # plan-init：项目计划体系初始化
