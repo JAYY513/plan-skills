@@ -6,7 +6,7 @@
 
 | 技能 | 作用 |
 |---|---|
-| `plan-init` | 项目启动时初始化计划体系：创建 SPEC.md（锚）、ROADMAP.md（里程碑 + 产出存档 + MVP/P0/P1 范围分桶）、TASKS.md（当前任务）、INBOX.md（想法停车场）、FINDINGS.md（调研知识库），并向 AGENTS.md 注入自动落盘判断矩阵。每个项目只运行一次 |
+| `plan-init` | 项目启动时初始化计划体系：创建 SPEC.md（锚）、ROADMAP.md（里程碑 + 产出存档 + MVP/P0/P1 范围分桶）、TASKS.md（当前任务）、INBOX.md（想法停车场）、FINDINGS.md（调研知识库），并向 AGENTS.md 注入自动落盘判断矩阵。全新初始化每个项目只运行一次；已初始化项目重跑时进入升级评估（升级 / 重置 / 不动三选一），不覆盖用户数据 |
 | `plan-task` | 任务全生命周期（自动驾驶）：分流判断（TASKS / INBOX / FINDINGS）、0.5~2 天粒度控制与 DoD 生成、开工自动建 `.planning/` 工作区、2-Action 落盘纪律、完成三合一动作与 ✅ 核对。曾用名：`new-task` + `task-plan`（两技能已合并） |
 | `plan-review` | 事件驱动的计划变更门：里程碑验收与交接（归档产出 + 启动下一里程碑首批任务）、停滞任务清理、INBOX 裁决、`.planning/` 工作区兜底、文档防腐化。曾用名：`weekly-review` |
 
@@ -60,8 +60,9 @@ npx skills add JAYY513/plan-skills --skill plan-review
 ## 常见问题
 
 - **需要 Node 运行时吗？** 需要。引擎（`engine/plan.mjs`）与所有 hook 薄壳依赖 Node ≥ 18；`npx skills` / Claude Code / Codex CLI 生态本身就依赖 Node，正常安装路径下不会缺。万一缺 node：hook 静默退出不阻断会话，`start` / `finish` / `plan-doctor` 报错退出
-- **项目已经做了一半，能中途接入吗？** 能。plan-init 只创建缺失的模板文件，已存在的同名文件会停止并提示，不会覆盖；回答 4 个问题时按现状填即可
-- **已有 AGENTS.md 会被覆盖吗？** 不会，判断矩阵追加到文件末尾，原有内容不动
+- **项目已经做了一半，能中途接入吗？** 能。plan-init 检测到任一计划文件已存在时不会覆盖，而是给出三个选项：升级（结构对齐最新模板、数据原样保留）/ 重置（旧文件备份到 `.planning/legacy-init/` 后重新初始化）/ 不动；回答 4 个问题时按现状填即可
+- **技能更新后，旧项目怎么获得新模板的改进？** `npx skills update` 更新技能包后重跑 plan-init 选「升级」：纪律指令与格式说明对齐新模板，里程碑 / 任务 / 调研条目等用户数据永不覆盖；AGENTS.md 的「计划纪律」段按锚点幂等替换，不会重复追加
+- **已有 AGENTS.md 会被覆盖吗？** 不会。只动「## 计划纪律」段：没有就追加到文件末尾，已有就整体替换为最新版，其余内容不动
 - **装完怎么验证 hooks 真的挂上了？** 跑自检脚本：`sh .agents/skills/plan-task/hooks/plan-doctor.sh`（Windows PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File .agents\skills\plan-task\hooks\plan-doctor.ps1`），逐项输出 PASS / WARN / FAIL，快速定位"静默无 hook"问题；`--global` 只查全局安装
 - **想临时关掉 hooks？** 设环境变量 `PLANNING_HOOKS_DISABLED=1`，全部 hook 立即静默（plan-doctor 是诊断工具，不受此变量影响）
 - **怎么更新已安装的技能？** 用 `npx skills update`——重新执行 `npx skills add` 不会自动更新已装技能
