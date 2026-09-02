@@ -1,0 +1,53 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  hooks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 两平台均用 sh 跑冒烟测试（Windows runner 自带 Git Bash）
+      - name: Run hook + engine smoke tests (sh)
+        shell: bash
+        run: sh tests/test-hooks.sh
+
+      # Windows 额外原生跑一遍 ps1 薄壳冒烟（不依赖 Git Bash 的 sh 转发）
+      - name: Run ps1 wrapper smoke (Windows native)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $hooks = Join-Path $PWD 'skills/plan-task/hooks'
+          $fail = 0
+          # 静默场景：空目录 → 各 hook exit 0
+          $empty = Join-Path ([System.IO.Path]::GetTempPath()) ("plan-empty-" + [System.Guid]::NewGuid())
+          New-Item -ItemType Directory -Force -Path $empty | Out-Null
+          foreach ($s in 'session-start','pre-tool-use','post-tool-use','stop-gate','user-prompt-submit','pre-compact','permission-request') {
+            $env:PLANNING_ROOT = $empty
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $hooks "$s.ps1") *> $null
+            if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: $s.ps1 空目录应 exit 0，实际 $LASTEXITCODE"; $fail = 1 }
+          }
+          # 阻断场景：进行中任务隔天且无工作区 → stop-gate exit 2 透传
+          $blk = Join-Path ([System.IO.Path]::GetTempPath()) ("plan-blk-" + [System.Guid]::NewGuid())
+          New-Item -ItemType Directory -Force -Path $blk | Out-Null
+          $y = (Get-Date).AddDays(-1).ToString('yyyy-MM-dd')
+          $tasks = @('# TASKS', '', '## 进行中', '', '### 任务甲', "- 开始：$y", '', '## 已拆好（待做）') -join "`n"
+          Set-Content -Path (Join-Path $blk 'TASKS.md') -Value $tasks -Encoding utf8 -NoNewline
+          $env:PLANNING_ROOT = $blk
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $hooks 'stop-gate.ps1') *> $null
+          if ($LASTEXITCODE -ne 2) { Write-Host "FAIL: stop-gate.ps1 阻断场景应 exit 2，实际 $LASTEXITCODE"; $fail = 1 }
+          Remove-Item -Recurse -Force $empty, $blk -ErrorAction SilentlyContinue
+          if ($fail -ne 0) { exit 1 }
+          Write-Host 'ps1 薄壳冒烟：全部通过'

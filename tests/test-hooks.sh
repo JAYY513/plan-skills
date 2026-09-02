@@ -1,9 +1,18 @@
 #!/bin/sh
-# tests/test-hooks.sh：hooks 冒烟测试（脚本单一来源在 skills/plan-task/hooks/，测一处即可）。
-# 用 mktemp 临时目录构造场景，断言各 hook 的输出文本与 exit code；每用例一行 PASS/FAIL，结尾汇总，有 FAIL 则 exit 1。
-# 运行方式：在仓库根执行 sh tests/test-hooks.sh
+# tests/test-hooks.sh：hooks + 引擎冒烟测试（逻辑单一实现在 skills/plan-task/engine/plan.mjs，hooks/ 下为薄壳）。
+# 用 mktemp 临时目录构造场景，断言各 hook / 引擎命令的输出文本与 exit code；每用例一行 PASS/FAIL，结尾汇总，有 FAIL 则 exit 1。
+# 运行方式：在仓库根执行 sh tests/test-hooks.sh（需要 node >= 18；有 pwsh 时额外跑 ps1 薄壳冒烟）
 
 HOOKS_DIR="$(cd "$(dirname "$0")/../skills/plan-task/hooks" && pwd)"
+ENGINE="$HOOKS_DIR/../engine/plan.mjs"
+
+command -v node >/dev/null 2>&1 || {
+  echo "FAIL: 未找到 node，引擎与测试需要 Node.js >= 18"
+  exit 1
+}
+
+TODAY=$(node -e 'const d=new Date();const p=n=>String(n).padStart(2,"0");console.log(d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()))')
+YESTERDAY=$(node -e 'const d=new Date(Date.now()-86400000);const p=n=>String(n).padStart(2,"0");console.log(d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()))')
 
 PASS=0
 FAIL=0
@@ -416,6 +425,217 @@ ok=0
 [ $rc -eq 0 ] || { ok=1; echo "$out"; }
 echo "$out" | grep -q '都注册了 plan-task，hook 会重复触发' || ok=1
 report "plan-doctor：两处都注册 plan-task → WARN 重复触发" $ok
+
+# ── 用例 14：user-prompt-submit 节流（内容未变只发摘要，变了恢复全量）──
+dir=$(mk)
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+### 任务甲
+
+- DoD：验证点
+
+## 已拆好（待做）
+EOF
+out1=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+out2=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+ok=0
+echo "$out1" | grep -q '进行中任务（TASKS.md 原文）：' || ok=1
+echo "$out2" | grep -q '计划状态无变化（进行中任务 1 个）' || ok=1
+echo "$out2" | grep -q '原文' && ok=1
+[ -f "$dir/.planning/.hook-cache.json" ] || ok=1
+# 修改进行中段 → 恢复全量
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+### 任务甲
+
+### 任务乙
+
+## 已拆好（待做）
+EOF
+out3=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+echo "$out3" | grep -q '进行中任务（TASKS.md 原文）：' || ok=1
+echo "$out3" | grep -q '任务乙' || ok=1
+# PLANNING_HOOKS_NO_THROTTLE=1 → 始终全量
+out4=$(PLANNING_HOOKS_NO_THROTTLE=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+out5=$(PLANNING_HOOKS_NO_THROTTLE=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+echo "$out4" | grep -q '原文' || ok=1
+echo "$out5" | grep -q '原文' || ok=1
+echo "$out5" | grep -q '无变化' && ok=1
+report "user-prompt-submit 节流：未变发摘要、变了恢复全量、NO_THROTTLE 始终全量" $ok
+
+# ── 用例 15：stop-gate 门二日期规则（当天开工豁免，隔天阻止）──
+dir=$(mk)
+cat > "$dir/TASKS.md" <<EOF
+# TASKS
+
+## 进行中
+
+### 任务甲
+- 开始：$TODAY
+
+## 已拆好（待做）
+EOF
+out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+[ -z "$out" ] || ok=1
+report "stop-gate 门二：当天开工任务无工作区 → 放行 exit 0" $ok
+
+dir=$(mk)
+cat > "$dir/TASKS.md" <<EOF
+# TASKS
+
+## 进行中
+
+### 任务甲
+- 开始：$YESTERDAY
+
+## 已拆好（待做）
+EOF
+out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+rc=$?
+ok=0
+[ $rc -eq 2 ] || ok=1
+echo "$out" | grep -q '阻止收尾：TASKS.md「进行中」仍有 1 个未完成任务' || ok=1
+echo "$out" | grep -q '当天开工' || ok=1
+report "stop-gate 门二：隔天任务无工作区 → 阻止 exit 2 且含豁免说明" $ok
+
+# ── 用例 16：stop-gate 门一精确匹配（plan.md 关联条目 → 已完成段 ✅）──
+dir=$(mk)
+mkdir -p "$dir/.planning/2026-08-01-demo-ws"
+cat > "$dir/.planning/2026-08-01-demo-ws/plan.md" <<'EOF'
+# 任务工作区：中文任务名
+
+- **关联 TASKS 条目**：中文任务名
+EOF
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+## 已拆好（待做）
+
+## 已完成（待归档）
+
+### 中文任务名 ✅
+- 完成：2026-08-01
+EOF
+out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+[ -z "$out" ] || ok=1
+report "stop-gate 门一：plan.md 关联条目精确匹配已完成任务 → exit 0" $ok
+
+# ── 用例 17：引擎 start（认领 + 幂等 + 工作区 + 未知任务）──
+dir=$(mk)
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+## 已拆好（待做）
+
+### store.js 扩展 tag 字段
+- DoD：过滤查询可用
+
+## 调研（限时探针）
+
+## 已完成（待归档）
+EOF
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" start "store.js 扩展 tag 字段" --date "$TODAY")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+echo "$out" | grep -q '已认领' || ok=1
+sed -n '/^## 进行中/,/^## 已拆好/p' "$dir/TASKS.md" | grep -q '### store.js 扩展 tag 字段' || ok=1
+sed -n '/^## 进行中/,/^## 已拆好/p' "$dir/TASKS.md" | grep -q "开始：$TODAY" || ok=1
+sed -n '/^## 已拆好/,/^## 调研/p' "$dir/TASKS.md" | grep -q '### store.js' && ok=1
+# 重复 start → 幂等 + 建工作区 + 补关联行
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" start "store.js 扩展 tag 字段" --workspace --date "$TODAY")
+rc=$?
+slug="$TODAY-store-js-扩展-tag-字段"
+echo "$out" | grep -q '无需重复认领' || ok=1
+[ $rc -eq 0 ] || ok=1
+[ -f "$dir/.planning/$slug/plan.md" ] || ok=1
+[ -f "$dir/.planning/$slug/progress.md" ] || ok=1
+grep -q "关联 TASKS 条目：store.js 扩展 tag 字段" "$dir/.planning/$slug/plan.md" 2>/dev/null || grep -q "关联 TASKS 条目\*\*：store.js 扩展 tag 字段" "$dir/.planning/$slug/plan.md" || ok=1
+grep -q "工作区：.planning/$slug/" "$dir/TASKS.md" || ok=1
+# 未知任务 → exit 1
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" start "不存在的任务")
+rc=$?
+[ $rc -eq 1 ] || ok=1
+echo "$out" | grep -q '未找到任务' || ok=1
+report "引擎 start：认领补日期、幂等、--workspace 建目录补关联行、未知任务 exit 1" $ok
+
+# ── 用例 18：引擎 finish（缺证据 exit 1 → 补齐后 ✅ + 归档）──
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" finish "store.js 扩展 tag 字段")
+rc=$?
+ok=0
+[ $rc -eq 1 ] || ok=1
+echo "$out" | grep -q '三合一动作缺失' || ok=1
+echo "$out" | grep -q '过程追溯' || ok=1
+echo "$out" | grep -q 'postmortem' || ok=1
+# 补齐三合一证据（结论回填 + postmortem 固化）
+cat > "$dir/FINDINGS.md" <<EOF
+# FINDINGS
+
+## 索引
+
+- F1：测试结论
+
+## 热区
+
+### F1：测试结论
+- 来源：测试
+- 结论：过滤查询可用
+- 过程追溯：.planning/done/$slug/progress.md
+EOF
+cat > "$dir/.planning/$slug/progress.md" <<'EOF'
+# progress：store.js 扩展 tag 字段
+
+## Postmortem
+
+- **结论**：→ FINDINGS.md F1
+- **踩过的坑**：无
+- **声明**：本文档为过程记录，结论以 FINDINGS.md 为准。
+EOF
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" finish "store.js 扩展 tag 字段" --date "$TODAY")
+rc=$?
+[ $rc -eq 0 ] || { ok=1; echo "$out"; }
+echo "$out" | grep -q '已完成：✅' || ok=1
+sed -n '/^## 已完成/,$p' "$dir/TASKS.md" | grep -q '### store.js 扩展 tag 字段 ✅' || ok=1
+sed -n '/^## 已完成/,$p' "$dir/TASKS.md" | grep -q "完成：$TODAY" || ok=1
+[ -d "$dir/.planning/done/$slug" ] || ok=1
+[ -d "$dir/.planning/$slug" ] && ok=1
+# finish 后 stop-gate 放行
+PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh" >/dev/null
+[ $? -eq 0 ] || ok=1
+report "引擎 finish：缺证据 exit 1 列缺失，补齐后 ✅ + 完成日期 + 工作区移入 done/" $ok
+
+# ── 用例 19：ps1 薄壳冒烟（有 pwsh 才跑，无则 SKIP 不计失败）──
+if command -v pwsh >/dev/null 2>&1; then
+  dir=$(mk)
+  ok=0
+  for s in session-start pre-tool-use post-tool-use stop-gate user-prompt-submit pre-compact permission-request; do
+    PLANNING_ROOT="$dir" pwsh -NoProfile -ExecutionPolicy Bypass -File "$HOOKS_DIR/$s.ps1" >/dev/null 2>&1
+    [ $? -eq 0 ] || { ok=1; echo "  ↳ $s.ps1 空目录应 exit 0"; }
+  done
+  dir=$(mk)
+  mkdir -p "$dir/.planning/2026-08-01-demo-task"
+  PLANNING_ROOT="$dir" pwsh -NoProfile -ExecutionPolicy Bypass -File "$HOOKS_DIR/stop-gate.ps1" >/dev/null 2>&1
+  [ $? -eq 2 ] || { ok=1; echo "  ↳ stop-gate.ps1 阻断场景应 exit 2"; }
+  report "ps1 薄壳冒烟：静默场景 exit 0、stop-gate 阻断透传 exit 2" $ok
+else
+  echo "SKIP: ps1 薄壳冒烟（无 pwsh）"
+fi
 
 # ── 汇总 ───────────────────────────────────────────────────────
 echo "-----"

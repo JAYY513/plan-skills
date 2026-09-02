@@ -27,7 +27,7 @@ hooks:
   Stop:
     - hooks:
         - type: command
-          command: "SCRIPT_DIR=\"${CLAUDE_SKILL_DIR}/hooks\"; if [ \"$OS\" = \"Windows_NT\" ] || uname 2>/dev/null | grep -qiE 'cygwin|mingw|msys'; then if command -v pwsh >/dev/null 2>&1; then pwsh -NoProfile -ExecutionPolicy Bypass -File \"$SCRIPT_DIR/stop-gate.ps1\"; elif command -v powershell >/dev/null 2>&1; then powershell -NoProfile -ExecutionPolicy Bypass -File \"$SCRIPT_DIR/stop-gate.ps1\"; else sh \"$SCRIPT_DIR/stop-gate.sh\"; fi; else sh \"$SCRIPT_DIR/stop-gate.sh\"; fi"
+          command: "sh \"${CLAUDE_SKILL_DIR}/hooks/stop-gate.sh\""
 ---
 
 # plan-task：任务录入、执行与完成
@@ -48,7 +48,7 @@ ROADMAP.md（找 ▶ 当前里程碑）、TASKS.md、INBOX.md 全文读；FINDIN
 4. **出现调研需求** → 登记前先查已有结论（FINDINGS.md 索引、docs/01-wiki、docs/research、个人知识库），命中则直接引用既有条目、不重复调研；未命中才进 TASKS.md「调研（限时探针）」区，必须向用户确认时间盒和产出要求（产出默认要求落 FINDINGS.md），缺了就问。调研时优先一手来源（官方文档、源码、论文），二手文章只作线索；没有来源的结论不写进 FINDINGS.md
 5. **用户问"下一步做什么" / 讨论实施计划要拆任务** → 「已拆好（待做）」队首 1~2 个就是答案，直接报给用户；队列为空时才从当前里程碑的验收标准反推候选任务（带 DoD），用户确认后录入
 6. **用户问"现在什么进度 / 当前状态 / status"** → 输出状态摘要，只读不写：当前 ▶ 里程碑与验收标准勾选情况、进行中任务及各自 DoD 进度、活跃工作区 plan.md 的「当前位置」、INBOX 待裁决数
-7. **用户说"开工 / 开始做 X"** → 认领任务（移入「进行中」并写开始日期）；未指定任务名时默认认领「已拆好（待做）」队首；若任务符合工作区判据（见下）→ 自动建 `.planning/` 工作区再动手
+7. **用户说"开工 / 开始做 X"** → 认领任务（调引擎 `start` 命令，见下）；未指定任务名时默认认领「已拆好（待做）」队首；若任务符合工作区判据（见下）→ 传 `--workspace` 自动建 `.planning/` 工作区再动手
 
 ## 录入流程（进 TASKS.md 的任务）
 
@@ -62,19 +62,26 @@ ROADMAP.md（找 ▶ 当前里程碑）、TASKS.md、INBOX.md 全文读；FINDIN
 
 ## 认领开工与工作区
 
-认领任务时先扫该任务的 `前置:` 行：前置任务未标 ✅ → 提醒用户一句"X 还没完成，确定要先做这个？"——是提醒不是阻断，用户说继续就继续。
+认领动作由引擎命令完成（在项目根目录执行，任务名按标题精确匹配）：
 
-任务符合以下任一判据 → **自动建** `.planning/<slug>/` 工作区（slug = `YYYY-MM-DD-任务短名`，短名用小写连字符），不问用户，建完告知一句；否则普通小任务不要建工作区：
+```bash
+node <技能目录>/engine/plan.mjs start "<任务名>"              # 移入「进行中」+ 补开始日期（幂等，重复调不报错）
+node <技能目录>/engine/plan.mjs start "<任务名>" --workspace  # 符合工作区判据时加此参数
+```
+
+`--workspace` 会自动：从 `assets/templates/` 复制 plan.md / progress.md 到 `.planning/<日期>-<slug>/`、填充任务名与关联条目、在 TASKS.md 任务行下补 `- 工作区：` 关联行（任务与工作区之间唯一的据）；已有工作区的任务会复用，目录丢失则按原 slug 重建并自动写 `⚠️ 工作区曾于 … 丢失` 重建标注。
+
+认领前仍由 agent 负责：先扫该任务的 `前置:` 行，前置任务未标 ✅ → 提醒用户一句"X 还没完成，确定要先做这个？"——是提醒不是阻断，用户说继续就继续。
+
+是否传 `--workspace` 由以下判据决定（符合任一 → 传，不问用户，建完告知一句；否则普通小任务不建工作区）：
 
 1. 预计跨 ≥2 个会话才能做完
 2. 执行路径边走边定（调研型任务，下一步取决于上一步发现）
 3. 用户明确要求建工作区
 
-建工作区：从 `assets/templates/` 复制 `plan.md`（任务名、目标、关联 TASKS 条目、步骤 checklist、「当前位置」标记区）与 `progress.md`（顶部预留 postmortem 区，下方为日志区）到 `.planning/<slug>/`。多个并行任务各自建独立目录，天然隔离，互不读写。
+多个并行任务各自建独立目录，天然隔离，互不读写。
 
-建工作区的同时，在 TASKS.md 该任务行下补一行 `工作区: .planning/<slug>/`（认领开工本来就要改这行，顺手多写一行）。这行是任务与工作区之间唯一的据，后续检测、恢复都以它为准。
-
-**工作区丢失重建**：每次开工 / 新会话恢复时，读任务行上记的工作区路径，其中的 plan.md 存在 → 正常开工；plan.md 不存在（目录丢失或残缺）→ 按原 slug 重建工作区，并在新 plan.md 顶部写一行 `⚠️ 工作区曾于 YYYY-MM-DD 丢失，此为重建，历史进度未恢复`，告知用户一句后照常开工，不阻塞、不问确认。进行中任务缺 `工作区:` 行的（本规则生效前的存量任务）→ 开工时先补记该行再按上面检测。
+**node 不可用时的兜底**（罕见，引擎依赖 Node ≥ 18）：按原手动规则执行——任务块移入「进行中」段末尾、补 `- 开始：YYYY-MM-DD`；需建工作区时手动复制模板到 `.planning/<日期>-<slug>/`（slug = 任务名转小写连字符）并补 `- 工作区：` 行。
 
 定位不变：项目级 5 文件是每条信息的唯一的家；`.planning/<slug>/` 是单任务的**临时工作区**，只放执行过程，**禁止存放最终结论**——结论的家永远是 FINDINGS.md（活跃条目在热区，历史条目经 plan-review 分诊后进 FINDINGS.archive.md，索引在两处均可按编号检索）。
 
@@ -87,12 +94,22 @@ ROADMAP.md（找 ▶ 当前里程碑）、TASKS.md、INBOX.md 全文读；FINDIN
 
 ## 完成流程（用户说"做完了"）
 
-1. **工作区前置检查**：若该任务有 `.planning/` 工作区 → 必须已完成三合一动作（见下），缺一件都不许标 ✅
-2. 逐条核对该任务的 DoD——实际执行验证步骤，不凭印象，全部通过才算完成；标 ✅ 前把本次改动的 diff 自查一遍：只含本任务相关改动，无顺手带入的无关修改
-3. 把任务从「进行中」移到「已完成（待归档）」，标记 ✅ 并写完成日期 + 一句"实际怎么做的"备注
+分工：**结论内容由 agent 先写，机械动作与校验由引擎 `finish` 命令完成**。
+
+1. 逐条核对该任务的 DoD——实际执行验证步骤，不凭印象，全部通过才算完成；标 ✅ 前把本次改动的 diff 自查一遍：只含本任务相关改动，无顺手带入的无关修改
+2. 若该任务有 `.planning/` 工作区 → agent 先写好三合一的内容部分（见下）：结论回填 FINDINGS.md（含「过程追溯」引用行）+ progress.md 顶部固化 postmortem
+3. 调引擎完成校验与机械动作：
+
+```bash
+node <技能目录>/engine/plan.mjs finish "<任务名>"
+```
+
+   校验通过 → 自动把任务移入「已完成（待归档）」、标题加 ✅、补完成日期、工作区移入 `.planning/done/`；校验不通过 → 列出缺失清单并拒绝标 ✅，agent 补齐内容后重跑。完成后 agent 在任务行补一句"实际怎么做的"备注
 4. **不许删除**——归档是 plan-review 的职责
 5. 过程中踩过的坑、推翻的方案 → 顺手记入 FINDINGS.md
 6. 检查队列水位，不足则提议补充
+
+**node 不可用时的兜底**：按原手动规则——核完三合一后手动把任务块移入「已完成（待归档）」、标题加 ✅、补 `- 完成：YYYY-MM-DD`，手动把工作区目录移入 `.planning/done/`。
 
 ### 完成三合一动作（一个动作三件事）
 
@@ -100,9 +117,9 @@ ROADMAP.md（找 ▶ 当前里程碑）、TASKS.md、INBOX.md 全文读；FINDIN
 
 1. **结论回填 FINDINGS.md**：按条目格式写入，并加一行引用：`过程追溯：.planning/done/<slug>/progress.md`
 2. **固化 postmortem 头**：在 progress.md 顶部 postmortem 区填写——结论 → FINDINGS 编号、一句话坑总结（详情在 FINDINGS）、声明"本文档为过程记录，结论以 FINDINGS 为准"
-3. **整个工作区移入 `.planning/done/`**：归档后只读，永不修改
+3. **整个工作区移入 `.planning/done/`**：归档后只读，永不修改（由 `finish` 命令自动执行）
 
-若安装本技能时启用了随技能注册的 stop-gate hook（脚本在本技能目录 `hooks/` 下），它会在会话收尾时校验三合一动作：存在活跃工作区但对应任务未标 ✅（无回填归档迹象）→ 输出阻止 / 警告。hook 只是本技能规则的执行者，不是第二套规则。
+若安装本技能时启用了随技能注册的 stop-gate hook（脚本在本技能目录 `hooks/` 下），它会在会话收尾时校验：门①——存在活跃工作区但关联任务未标 ✅（按 plan.md「关联 TASKS 条目」精确匹配，postmortem 已固化兜底）→ 阻止；门②——「进行中」仍有任务且无任何工作区痕迹 → 阻止，但**开始日期 = 今天的任务豁免**（当天认领的小任务不再误伤，隔天遗留的仍阻止）。hook 只是本技能规则的执行者，不是第二套规则。
 
 ## 关联技能
 

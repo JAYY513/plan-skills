@@ -1,6 +1,8 @@
 # Claude Code hooks
 
-5 个机制：session-start（注入计划状态）、pre-tool-use（注入当前任务上下文）、post-tool-use（提醒落盘 progress）、pre-compact（上下文压缩前抢写状态提醒）、stop-gate（收尾校验三合一动作）。所有脚本只读状态文件，绝不写状态文件；设置 `PLANNING_HOOKS_DISABLED=1` 可一键禁用全部 hook。
+6 个机制：session-start（注入计划状态）、user-prompt-submit（每次用户消息提交时重新注入精简计划状态，抗 context rot；内容未变时节流为一行摘要）、pre-tool-use（注入当前任务上下文）、post-tool-use（提醒落盘 progress）、pre-compact（上下文压缩前抢写状态提醒）、stop-gate（收尾校验三合一动作）。所有脚本都是调用单一引擎 `skills/plan-task/engine/plan.mjs` 的薄壳，只读状态文件（唯一写入是节流缓存 `.planning/.hook-cache.json`）；设置 `PLANNING_HOOKS_DISABLED=1` 可一键禁用全部 hook。
+
+**Node 依赖**：引擎需要 Node ≥ 18（Claude Code 本身即依赖 Node，正常安装路径下不会缺）；万一缺 node，hook 薄壳静默退出不阻断会话。Windows 下 frontmatter 的 `sh` 入口依赖 Git Bash（与其余 hook 一致）。
 
 ## 首选：随技能自动注册（无需任何手动步骤）
 

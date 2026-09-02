@@ -59,6 +59,7 @@ npx skills add JAYY513/plan-skills --skill plan-review
 
 ## 常见问题
 
+- **需要 Node 运行时吗？** 需要。引擎（`engine/plan.mjs`）与所有 hook 薄壳依赖 Node ≥ 18；`npx skills` / Claude Code / Codex CLI 生态本身就依赖 Node，正常安装路径下不会缺。万一缺 node：hook 静默退出不阻断会话，`start` / `finish` / `plan-doctor` 报错退出
 - **项目已经做了一半，能中途接入吗？** 能。plan-init 只创建缺失的模板文件，已存在的同名文件会停止并提示，不会覆盖；回答 4 个问题时按现状填即可
 - **已有 AGENTS.md 会被覆盖吗？** 不会，判断矩阵追加到文件末尾，原有内容不动
 - **装完怎么验证 hooks 真的挂上了？** 跑自检脚本：`sh .agents/skills/plan-task/hooks/plan-doctor.sh`（Windows PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File .agents\skills\plan-task\hooks\plan-doctor.ps1`），逐项输出 PASS / WARN / FAIL，快速定位"静默无 hook"问题；`--global` 只查全局安装
@@ -88,9 +89,11 @@ npx skills add JAYY513/plan-skills --skill plan-review
 - `.planning/` 活跃区建议 gitignore，`.planning/done/` 提交入库——完成历史不删
 - 归档后永不修改；漏归档 / 停滞的工作区由 plan-review 兜底
 
-## 可选 hook 层
+## 可选 hook 层（薄壳 + 单一引擎）
 
-无 hook 时，上述纪律靠 AGENTS.md + agent 自觉执行；安装平台 hook 后由脚本在关键时机自动注入提醒、强制校验，行为等价只是强度更强。hook 脚本只读状态文件并输出提示文本，绝不写状态文件；设置环境变量 `PLANNING_HOOKS_DISABLED=1` 可一键全部禁用。
+无 hook 时，上述纪律靠 AGENTS.md + agent 自觉执行；安装平台 hook 后由脚本在关键时机自动注入提醒、强制校验，行为等价只是强度更强。
+
+架构：全部逻辑只有一份，在 `skills/plan-task/engine/plan.mjs`（Node ≥ 18，零依赖）；`hooks/` 下的 16 个 `.sh` / `.ps1` 脚本只是调用引擎的薄壳，不含任何业务逻辑，双平台行为永不漂移。hook 只读状态文件并输出提示文本（唯一写入是节流缓存 `.planning/.hook-cache.json`）；状态文件只由引擎的 `start` / `finish` 命令写入。设置环境变量 `PLANNING_HOOKS_DISABLED=1` 可一键全部禁用；无 node 环境时 hook 静默退出不阻断会话。
 
 | 平台 | 安装方式 |
 |---|---|
@@ -101,10 +104,10 @@ npx skills add JAYY513/plan-skills --skill plan-review
 7 个机制：
 
 - **session-start**：会话开始注入当前里程碑 + 进行中任务 + 活跃工作区列表 + 主动提示行（进行中任务数 / INBOX 待裁决数）
-- **user-prompt-submit**：每次用户消息提交时重新注入进行中任务**原文**（TASKS.md「进行中」段含 DoD，超 60 行截断）+ 当前里程碑一行 + 活跃工作区一行，抗 context rot
-- **pre-tool-use**：执行类工具前注入当前任务 + 工作区 plan.md「当前位置」摘要
-- **post-tool-use**：写代码文件后提醒更新 progress.md / 勾选 plan.md 步骤
-- **stop-gate**：会话收尾双门校验——①存在活跃工作区但任务未标 ✅ → 阻止并提示三合一动作；②「进行中」仍有任务且无任何工作区痕迹 → 阻止并提示完成或移回待办
+- **user-prompt-submit**：每次用户消息提交时重新注入进行中任务**原文**（TASKS.md「进行中」段含 DoD，超 60 行截断）+ 当前里程碑一行 + 活跃工作区一行，抗 context rot。**节流**：注入内容与上次完全相同时只输出一行摘要（计划状态无变化），不重复刷全文；`PLANNING_HOOKS_NO_THROTTLE=1` 可关闭节流
+- **pre-tool-use**：执行类工具前注入当前任务 + 工作区 plan.md「当前位置」摘要。**节流**：内容未变且距上次输出 < 10 分钟 → 静默
+- **post-tool-use**：写代码文件后提醒更新 progress.md / 勾选 plan.md 步骤。**节流**：同 pre-tool-use
+- **stop-gate**：会话收尾双门校验——①存在活跃工作区但关联任务未标 ✅（按 plan.md「关联 TASKS 条目」精确匹配，postmortem 已固化兜底）→ 阻止并提示三合一动作；②「进行中」仍有任务且无任何工作区痕迹 → 阻止并提示完成或移回待办；**当天豁免**：开始日期 = 今天的进行中任务不被门②阻止（当天认领的小任务不再误伤），隔天遗留或未写开始日期的仍阻止
 - **pre-compact**：上下文压缩前提醒把进展 / 「当前位置」抢写进工作区，防漂移
 - **permission-request**（仅 Codex）：权限确认弹窗时注入一行当前任务上下文
 
@@ -122,7 +125,7 @@ git config core.hooksPath .githooks
 sh tests/test-hooks.sh
 ```
 
-hook 脚本单一来源在 `skills/plan-task/hooks/`（plan-task 是执行期技能，hooks 归它管；plan-init / plan-review 是初始化与回顾动作，不挂执行期 hooks）。改动脚本后直接改该目录即可，无需跨平台同步副本，测试会对该目录跑冒烟。
+hook 脚本单一来源在 `skills/plan-task/hooks/`（plan-task 是执行期技能，hooks 归它管；plan-init / plan-review 是初始化与回顾动作，不挂执行期 hooks），但薄壳里没有任何业务逻辑——真正的逻辑全部在 `skills/plan-task/engine/plan.mjs`。改行为直接改引擎，测试（`tests/test-hooks.sh`）会同时覆盖引擎命令、hook 输出文本、薄壳透传（含 ps1 冒烟，有 pwsh 才跑）与节流逻辑。
 
 ## 设计原则
 

@@ -1,22 +1,11 @@
-﻿# post-tool-use hook：写代码文件后提醒落盘进展。
-# 输出内容：若存在活跃工作区，提醒按 2-Action 规则更新 progress.md / 勾选 plan.md 步骤。
-# 本脚本只读状态文件并输出提示文本，绝不写状态文件；无活跃工作区时静默退出。
-# 禁用方式：设置环境变量 PLANNING_HOOKS_DISABLED=1，本脚本立即退出。
-
-# 输出统一为 UTF-8，避免 Windows PowerShell 默认 GBK 编码把 ▶ 等字符转成 ?
+﻿# post-tool-use hook 薄壳：全部逻辑在 ..\engine\plan.mjs（sh/ps1 共用单一实现，双平台永不漂移）。
+# 禁用方式：设置环境变量 PLANNING_HOOKS_DISABLED=1，引擎立即静默退出。
+# 输出统一按 UTF-8 解码，避免 Windows PowerShell 默认 GBK 编码把 ▶ 等字符转成 ?
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
-
-if ($env:PLANNING_HOOKS_DISABLED -eq "1") { exit 0 }
-
-$Root = if ($env:PLANNING_ROOT) { $env:PLANNING_ROOT } else { "." }
-$planning = Join-Path $Root ".planning"
-if (-not (Test-Path $planning)) { exit 0 }
-
-$active = Get-ChildItem $planning -Directory | Where-Object { $_.Name -ne "done" }
-if ($active.Count -gt 0) {
-  $names = ($active | ForEach-Object { $_.Name }) -join " "
-  Write-Output "[plan] 存在活跃工作区： $names"
-  Write-Output "[plan] 若本次修改属于其中任务，请按 2-Action 规则把进展 / 决策 / 错误落 progress.md，并更新 plan.md 的勾选与「当前位置」。"
+$engine = Join-Path $PSScriptRoot '..\engine\plan.mjs'
+if (Get-Command node -ErrorAction SilentlyContinue) {
+  node $engine hook post-tool-use @args
+  exit $LASTEXITCODE
 }
-
+# 无 node → 静默退出（hook 绝不阻断会话）
 exit 0
