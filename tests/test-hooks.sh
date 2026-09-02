@@ -637,6 +637,71 @@ else
   echo "SKIP: ps1 薄壳冒烟（无 pwsh）"
 fi
 
+# ── 用例 20：session-start 注入 SPEC 红线（边界 + 选型），空模板无噪音，超长截断 ──
+dir=$(mk)
+cat > "$dir/SPEC.md" <<'EOF'
+# SPEC — 项目规格（锚）
+
+## 项目是什么
+
+- 某工具
+
+## 不做什么（边界）
+
+- 不做 GUI 界面
+- 不接第三方支付
+
+## 技术选型与理由
+
+| 决策 | 选择 | 理由 | 日期 |
+|---|---|---|---|
+| 运行时 | Node.js | 团队熟 | 2026-01-01 |
+| 持久化 | JSON 文件 | 零依赖 | 2026-01-01 |
+
+## 变更日志
+
+| 日期 | 变更内容 | 原因 |
+|---|---|---|
+EOF
+touch "$dir/TASKS.md"
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" hook session-start)
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+echo "$out" | grep -q 'SPEC 红线' || ok=1
+echo "$out" | grep -q '边界：不做 GUI 界面' || ok=1
+echo "$out" | grep -q '边界：不接第三方支付' || ok=1
+echo "$out" | grep -q '选型：运行时 = Node.js' || ok=1
+echo "$out" | grep -q '选型：持久化 = JSON 文件' || ok=1
+# 未填充的空模板（含注释 + 示例行 + 占位符）不应产生红线噪音
+dir2=$(mk)
+cat > "$dir2/SPEC.md" <<'EOF'
+# SPEC — 项目规格（锚）
+
+## 不做什么（边界）
+
+<!-- 明确排除的方向。例如：本期不做移动端 -->
+
+## 技术选型与理由
+
+| 决策 | 选择 | 理由 | 日期 |
+|---|---|---|---|
+| 示例：后端框架 | xxx | 一句话理由 | YYYY-MM-DD |
+EOF
+touch "$dir2/TASKS.md"
+out2=$(PLANNING_ROOT="$dir2" node "$ENGINE" hook session-start)
+echo "$out2" | grep -q 'SPEC 红线' && ok=1
+echo "$out2" | grep -q '示例：后端框架' && ok=1
+# 超长 SPEC → 截断（上限 12 行 + 提示）
+dir3=$(mk)
+{ echo '# SPEC'; echo; echo '## 不做什么（边界）'; echo; for i in $(seq 1 15); do echo "- 边界条目 $i"; done; } > "$dir3/SPEC.md"
+touch "$dir3/TASKS.md"
+out3=$(PLANNING_ROOT="$dir3" node "$ENGINE" hook session-start)
+n=$(echo "$out3" | grep -c '边界：边界条目')
+[ "$n" -eq 12 ] || { ok=1; echo "  ↳ 截断应保留 12 条，实际 $n"; }
+echo "$out3" | grep -q '已截断' || ok=1
+report "session-start 注入 SPEC 红线（边界+选型）、空模板无噪音、超长截断" $ok
+
 # ── 汇总 ───────────────────────────────────────────────────────
 echo "-----"
 echo "合计 $((PASS + FAIL)) 个用例：PASS $PASS，FAIL $FAIL"

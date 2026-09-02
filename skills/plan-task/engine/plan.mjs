@@ -158,6 +158,41 @@ function currentMilestone(root) {
   return ln ? ln.replace(/^#* */, '') : null;
 }
 
+/**
+ * SPEC.md 红线解析：「不做什么（边界）」的条目 + 「技术选型」表的「决策 = 选择」。
+ * 供 session-start 作执行期护栏注入，防隐式漂移（做着做着违背边界 / 选型）；只读不改 SPEC。
+ * 跳过 HTML 注释（模板占位说明）与未填充的模板示例行，避免刚建好的空模板产生噪音。
+ * 返回 { boundary: string[], tech: string[] }，无 SPEC 或无内容则对应数组为空。
+ */
+function specRedlines(root) {
+  const res = { boundary: [], tech: [] };
+  const text = read(path.join(root, 'SPEC.md'));
+  if (text === null) return res;
+  let section = null;
+  for (const ln of text.split('\n')) {
+    if (/^##\s/.test(ln)) {
+      if (/不做什么|边界/.test(ln)) section = 'boundary';
+      else if (/技术选型/.test(ln)) section = 'tech';
+      else section = null;
+      continue;
+    }
+    if (!section || /^\s*<!--/.test(ln)) continue;
+    if (section === 'boundary') {
+      const m = ln.match(/^\s*[-*]\s+(.+?)\s*$/);
+      if (m) res.boundary.push(m[1]);
+    } else {
+      if (!/^\s*\|/.test(ln)) continue;
+      const cells = ln.split('|').map((c) => c.trim()).filter((c) => c !== '');
+      if (cells.length < 2) continue;
+      if (cells.every((c) => /^:?-+:?$/.test(c))) continue; // 表格分隔行
+      if (cells[0] === '决策' || cells[0].startsWith('示例')) continue; // 表头 / 模板示例行
+      if (cells.some((c) => /YYYY-MM-DD|^xxx$|^<.*>$/.test(c))) continue; // 未填充占位符
+      res.tech.push(`${cells[0]} = ${cells[1]}`);
+    }
+  }
+  return res;
+}
+
 /** .planning/ 下活跃工作区目录名（排除 done/，字母序，与 shell glob 一致）。 */
 function activeWorkspaces(root) {
   const dir = path.join(root, '.planning');
@@ -247,6 +282,16 @@ const throttleOff = () => process.env.PLANNING_HOOKS_NO_THROTTLE === '1';
 function hookSessionStart(root) {
   if (!isFile(path.join(root, 'ROADMAP.md')) && !isFile(path.join(root, 'TASKS.md'))
     && !isFile(path.join(root, 'INBOX.md')) && !isDir(path.join(root, '.planning'))) return 0;
+
+  // SPEC 红线：执行期护栏，防「隐式漂移」（做着做着违背边界 / 技术选型）。每会话注入一次，带行数上限防膨胀刷屏。
+  const spec = specRedlines(root);
+  const redlines = [...spec.boundary.map((b) => `- 边界：${b}`), ...spec.tech.map((t) => `- 选型：${t}`)];
+  if (redlines.length) {
+    out('[plan] SPEC 红线（执行期护栏，与其他文档冲突以 SPEC.md 为准）：');
+    const LIMIT = 12;
+    for (const l of redlines.slice(0, LIMIT)) out(l);
+    if (redlines.length > LIMIT) out('- （SPEC 红线过长已截断，完整边界见 SPEC.md）');
+  }
 
   const milestone = currentMilestone(root);
   if (milestone) out(`[plan] 当前里程碑：${milestone}`);

@@ -103,7 +103,7 @@ npx skills add JAYY513/plan-skills --skill plan-review
 
 7 个机制：
 
-- **session-start**：会话开始注入当前里程碑 + 进行中任务 + 活跃工作区列表 + 主动提示行（进行中任务数 / INBOX 待裁决数）
+- **session-start**：会话开始先注入 **SPEC 红线**（「不做什么」边界 + 技术选型，防执行期隐式漂移，上限 12 行截断），再注入当前里程碑 + 进行中任务 + 活跃工作区列表 + 主动提示行（进行中任务数 / INBOX 待裁决数）
 - **user-prompt-submit**：每次用户消息提交时重新注入进行中任务**原文**（TASKS.md「进行中」段含 DoD，超 60 行截断）+ 当前里程碑一行 + 活跃工作区一行，抗 context rot。**节流**：注入内容与上次完全相同时只输出一行摘要（计划状态无变化），不重复刷全文；`PLANNING_HOOKS_NO_THROTTLE=1` 可关闭节流
 - **pre-tool-use**：执行类工具前注入当前任务 + 工作区 plan.md「当前位置」摘要。**节流**：内容未变且距上次输出 < 10 分钟 → 静默
 - **post-tool-use**：写代码文件后提醒更新 progress.md / 勾选 plan.md 步骤。**节流**：同 pre-tool-use
