@@ -4,8 +4,8 @@
 - **关联 TASKS 条目**：<TASKS.md 中的任务标题>
 - **开工**：<YYYY-MM-DD>
 
-> 本工作区只放执行过程。最终结论的家是 FINDINGS.md，完成时走三合一动作
-> （回填 FINDINGS + 本目录 progress.md 固化 postmortem + 移入 .planning/done/）。
+> 本工作区只放执行过程。最终结论的家是 FINDINGS.md，完成时先走对齐门
+> （FINDINGS 对得上 DoD 实测）再三合一（回填 FINDINGS + 本目录 progress.md 固化 postmortem + 移入 .planning/done/）。
 
 ## 步骤
 

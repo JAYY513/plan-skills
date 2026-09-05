@@ -66,6 +66,7 @@ disable-model-invocation: true
 - 任务层乱是正常的，不需要治；锚（SPEC）和路标（ROADMAP）不许随便动
 - 新想法一律先进 INBOX.md，禁止当场改 ROADMAP.md / SPEC.md
 - 调研结论一律落 FINDINGS.md，禁止只留在对话里
+- 任务完成时 FINDINGS 必须对得上交付；知识库冲突自己改，影响计划停 INBOX，拿不准才问
 - 每条信息只有一个家，其他文件只引用不复制
 - 完成历史不删除：任务归档到 ROADMAP 里程碑下，随时能回答"这个阶段做了什么"
 - 计划维护时间红线：每天 ≤10 分钟，每周 ≤30 分钟

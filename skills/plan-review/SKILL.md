@@ -51,7 +51,7 @@ ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文读；FINDINGS.md �
 
 ### 5. .planning/ 工作区兜底
 - 扫描 `.planning/` 活跃工作区（`done/` 以外的目录）：
-  - 对应任务已 ✅ 但工作区未归档 → 补做 plan-task 三合一动作中缺的部分（回填 FINDINGS / postmortem / 移入 done/）
+  - 对应任务已 ✅ 但工作区未归档 → 先按 plan-task 对齐门核对 FINDINGS 是否对得上该任务交付，再补三合一缺的部分（回填 FINDINGS / postmortem / 移入 done/）
   - 对应任务停滞（progress.md 多日无更新）→ 建议收尾（按三合一动作归档）或连任务一起删除，问用户一句
 - `.planning/done/` 只读不动——归档后永不修改
 
@@ -88,4 +88,4 @@ ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文读；FINDINGS.md �
 - 砍任务时直接给建议，不要只罗列问题让用户自己判断
 - 涉及 SPEC.md 的修改必须追加变更日志
 - 里程碑交接四件事缺一不可——缺了"启动下一里程碑"，用户就没有可执行的任务
-- 任务录入、开工、标完成（DoD 核对、✅ 标记）不是本技能的职责——走 plan-task
+- 任务录入、开工、标完成（DoD 核对、对齐门、✅ 标记）不是本技能的职责——走 plan-task

@@ -7,7 +7,7 @@
 | 技能 | 作用 |
 |---|---|
 | `plan-init` | 项目启动时初始化计划体系：创建 SPEC.md（锚）、ROADMAP.md（里程碑 + 产出存档 + MVP/P0/P1 范围分桶）、TASKS.md（当前任务）、INBOX.md（想法停车场）、FINDINGS.md（调研知识库），并向 AGENTS.md 注入自动落盘判断矩阵。全新初始化每个项目只运行一次；已初始化项目重跑时进入升级评估（升级 / 重置 / 不动三选一），不覆盖用户数据 |
-| `plan-task` | 任务全生命周期（自动驾驶）：分流判断（TASKS / INBOX / FINDINGS）、0.5~2 天粒度控制与 DoD 生成、开工自动建 `.planning/` 工作区、2-Action 落盘纪律、完成三合一动作与 ✅ 核对。曾用名：`new-task` + `task-plan`（两技能已合并） |
+| `plan-task` | 任务全生命周期（自动驾驶）：分流判断（TASKS / INBOX / FINDINGS）、0.5~2 天粒度控制与 DoD 生成、开工自动建 `.planning/` 工作区、2-Action 落盘纪律、完成对齐门（FINDINGS 对得上交付）再三合一与 ✅ 核对。曾用名：`new-task` + `task-plan`（两技能已合并） |
 | `plan-review` | 事件驱动的计划变更门：里程碑验收与交接（归档产出 + 启动下一里程碑首批任务）、停滞任务清理、INBOX 裁决、`.planning/` 工作区兜底、文档防腐化。曾用名：`weekly-review` |
 
 ## 安装
@@ -46,7 +46,7 @@ npx skills add JAYY513/plan-skills --skill plan-review
 | "接下来做登录页" | 录入 TASKS.md，拆 0.5~2 天粒度，带 DoD | 不问，写后告知一句 |
 | "我试过 X 方案，不行，因为……" | 落 FINDINGS.md（失败尝试，含原因） | 不问，写后告知 |
 | "开工 / 开始做 X" | 认领任务；跨会话大任务自动建 `.planning/` 工作区 | 不问，写后告知 |
-| "做完了" | 核对 DoD → 三合一归档（回填 FINDINGS + postmortem + 移入 done/）→ 标 ✅ | 不问 |
+| "做完了" | 核对 DoD → 对齐门（FINDINGS 对得上交付）→ 三合一归档 → 标 ✅ | 知识库自己改；影响计划停 INBOX；拿不准问一句 |
 | "周回顾 / 这个阶段做完了" | 跑 plan-review：验收、交接、裁决、体系自检 | 计划变更处确认 |
 
 ## hooks 安装（按平台）
@@ -86,7 +86,7 @@ npx skills add JAYY513/plan-skills --skill plan-review
 
 归档规则：
 
-- 任务完成走三合一动作：结论回填 FINDINGS.md（含"过程追溯"引用行）→ progress.md 顶部固化 postmortem → 整个工作区移入 `.planning/done/`，缺一件不许标 ✅
+- 任务完成：对齐门通过后才走三合一（回填 FINDINGS + postmortem + 移入 done/）。知识库冲突自己改；影响计划停 INBOX，不挡 ✅；缺一件不许标 ✅
 - `.planning/` 活跃区建议 gitignore，`.planning/done/` 提交入库——完成历史不删
 - 归档后永不修改；漏归档 / 停滞的工作区由 plan-review 兜底
 
@@ -133,6 +133,7 @@ hook 脚本单一来源在 `skills/plan-task/hooks/`（plan-task 是执行期技
 - 任务层乱是正常的，不需要治；锚（SPEC）和路标（ROADMAP）不许随便动
 - 新想法一律先进 INBOX.md，禁止当场改 ROADMAP.md / SPEC.md
 - 调研结论一律落 FINDINGS.md，跨会话不丢；失败尝试也记录，避免重复踩坑
+- 任务完成时 FINDINGS 必须对得上交付；知识库冲突自己改，影响计划停 INBOX，拿不准才问
 - 完成历史不删除：任务归档到 ROADMAP 里程碑下，随时能回答"这个阶段做了什么"
 - 每条信息只有一个家，其他文件只引用不复制
 - 计划维护时间红线：每天 ≤10 分钟，回顾单次 ≤30 分钟
