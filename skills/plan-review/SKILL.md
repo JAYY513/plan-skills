@@ -26,7 +26,7 @@ ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文读；FINDINGS.md �
 3. **读 FINDINGS 并分诊**：
    - 列出 FINDINGS.md 热区与 FINDINGS.archive.md 中所有标注影响下一里程碑的条目（含失败尝试），作为下一阶段的输入
    - 对刚完成里程碑相关的条目逐条分诊（四选一；编号永不删除、永不复用，被推翻的条目只改状态）：
-     - **毕业**：结论已固化为永久规则（已写入 SPEC/AGENTS/docs）→ 条目收缩成一行存根，指向规则所在处
+     - **毕业**：结论已固化为永久规则（已写入 SPEC/AGENTS/docs）→ 条目收缩成一行存根，指向规则所在处；**保留「材料」行**（改成 `done/` 路径），或先把已裁定部分写入 SPEC / wiki。默认不删 `notes/`
      - **归档**：全文移入 FINDINGS.archive.md 对应里程碑小节，FINDINGS.md 索引保留该行
      - **保留**：仍影响下一里程碑 → 留在 FINDINGS.md 热区
      - **导出**：跨项目可复用的外部知识（库坑、通用模式、调研方法）→ 写入个人知识库，条目状态标「已导出」
@@ -36,7 +36,7 @@ ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文读；FINDINGS.md �
 
 ### 2. 停滞任务清理
 - 找出 TASKS.md 中超过 2 天没动的任务，逐个给建议：拆小 / 砍除 / 降级到 INBOX
-- 超时的调研探针：强制收尾，"没有结论也是结论"，结论写入 FINDINGS.md 或标"延后"
+- 超时的调研探针：结论写入 FINDINGS.md（没有结论也是结论）或标"延后"。已有 `notes/` 且后面还要实施 → **不**走三合一归档工作区；可改成「调研清楚并实施」继续用同一工作区
 
 ### 3. INBOX 裁决
 - 逐条处理「待裁决」：并入当前里程碑（转 TASKS）/ 归入 ROADMAP 的 P0 或 P1 桶 / 删除
@@ -52,18 +52,19 @@ ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文读；FINDINGS.md �
 ### 5. .planning/ 工作区兜底
 - 扫描 `.planning/` 活跃工作区（`done/` 以外的目录）：
   - 对应任务已 ✅ 但工作区未归档 → 先按 plan-task 对齐门核对 FINDINGS 是否对得上该任务交付，再补三合一缺的部分（回填 FINDINGS / postmortem / 移入 done/）
-  - 对应任务停滞（progress.md 多日无更新）→ 建议收尾（按三合一动作归档）或连任务一起删除，问用户一句
+  - 对应任务停滞（progress.md 多日无更新）且 notes 还要用于实施 → 建议继续用同一工作区，不要默认收尾归档
+  - 对应任务停滞且不再实施 → 建议收尾（按三合一动作归档）或连任务一起删除，问用户一句
 - `.planning/done/` 只读不动——归档后永不修改
 
 ### 6. 文档查重（防腐化）
 检查 AGENTS.md、SPEC.md、ROADMAP.md、TASKS.md、FINDINGS.md，找出：
-- 同一事实出现在多处 → 保留一处，其余改为引用
+- 同一事实出现在多处 → 保留一处，其余改为引用。`notes/` 与 FINDINGS 结论并存不算重复——结论以 FINDINGS 为准，不要为去重去删 notes
 - 相互矛盾的内容 → 以 SPEC.md 为准修正，并询问用户
 - 明显过期的内容（已否决的方案、已完成事项的残留描述）→ 删除；FINDINGS.md 中被推翻的条目不删，把状态改为"已被 F? 推翻"（无论该条目在热区还是归档）
 
 ### 7. 体系自检（自进化，最后 5 分钟）
 不只 review 计划，还要 review "体系自己"——计划内容会演化，工作方式也要演化：
-1. **执行度检查**：找出纪律没被执行的证据——TASKS.md 里缺 DoD 的条目、FINDINGS.md 里缺来源/证据的条目、`.planning/done/` 里缺 postmortem 的卷宗
+1. **执行度检查**：找出纪律没被执行的证据——TASKS.md 里缺 DoD 的条目、FINDINGS.md 里缺来源/证据的条目、带「材料」行但路径打不开的条目、`.planning/done/` 里缺 postmortem 的卷宗。不检查 notes 章节是否写全
 2. **使用率检查**：哪个文件整个周期没被读过/写过（如 INBOX 长期为空说明分流没发生，SPEC 从没被引用说明锚没人看）
 3. **演化提案**：基于证据提 1~2 条体系修订（改模板措辞 / 增删纪律 / 调整 AGENTS.md 判断矩阵），**必须用户确认后才改**——提议权在 agent，决定权在人
 - 没发现问题就写"体系健康"，不要硬凑提案

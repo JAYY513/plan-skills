@@ -4,8 +4,9 @@
 - **关联 TASKS 条目**：<TASKS.md 中的任务标题>
 - **开工**：<YYYY-MM-DD>
 
-> 本工作区只放执行过程。最终结论的家是 FINDINGS.md，完成时先走对齐门
-> （FINDINGS 对得上 DoD 实测）再三合一（回填 FINDINGS + 本目录 progress.md 固化 postmortem + 移入 .planning/done/）。
+> 本工作区只放执行过程：plan.md / progress.md，以及可选的 notes/（调研正文，有材料才建）。
+> 最终结论的家是 FINDINGS.md。notes 没有完成态，可以错、可以改；还要改 notes 或还要实施时不要 finish。
+> 完成时先走对齐门（FINDINGS 对得上 DoD 实测）再三合一（回填 FINDINGS + 本目录 progress.md 固化 postmortem + 移入 .planning/done/）。
 
 ## 步骤
 

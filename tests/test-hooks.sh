@@ -146,7 +146,18 @@ ok=0
 [ $rc -eq 0 ] || ok=1
 echo "$out" | grep -q '上下文即将压缩' || ok=1
 echo "$out" | grep -q '2026-07-18-demo-task' || ok=1
+echo "$out" | grep -q 'notes/' && ok=1
 report "pre-compact：活跃工作区输出提醒含工作区名" $ok
+
+dir=$(mk)
+mkdir -p "$dir/.planning/2026-07-18-demo-task/notes"
+out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/pre-compact.sh")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+echo "$out" | grep -q '上下文即将压缩' || ok=1
+echo "$out" | grep -q 'notes/' || ok=1
+report "pre-compact：已有 notes/ 时催材料落盘" $ok
 
 dir=$(mk)
 out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/pre-compact.sh")
@@ -566,6 +577,7 @@ echo "$out" | grep -q '无需重复认领' || ok=1
 [ $rc -eq 0 ] || ok=1
 [ -f "$dir/.planning/$slug/plan.md" ] || ok=1
 [ -f "$dir/.planning/$slug/progress.md" ] || ok=1
+[ -d "$dir/.planning/$slug/notes" ] && ok=1
 grep -q "关联 TASKS 条目：store.js 扩展 tag 字段" "$dir/.planning/$slug/plan.md" 2>/dev/null || grep -q "关联 TASKS 条目\*\*：store.js 扩展 tag 字段" "$dir/.planning/$slug/plan.md" || ok=1
 grep -q "工作区：.planning/$slug/" "$dir/TASKS.md" || ok=1
 # 未知任务 → exit 1
@@ -701,6 +713,42 @@ n=$(echo "$out3" | grep -c '边界：边界条目')
 [ "$n" -eq 12 ] || { ok=1; echo "  ↳ 截断应保留 12 条，实际 $n"; }
 echo "$out3" | grep -q '已截断' || ok=1
 report "session-start 注入 SPEC 红线（边界+选型）、空模板无噪音、超长截断" $ok
+
+# ── 用例 21：调研区 start --workspace 复制 notes/index.md ──
+dir=$(mk)
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+## 已拆好（待做）
+
+## 调研（限时探针）
+
+### product ia probe
+- 时间盒：2 小时
+- 产出：FINDINGS.md 一条结论
+- DoD：结论落 FINDINGS
+
+## 已完成（待归档）
+EOF
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" start "product ia probe" --workspace --date "$TODAY")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+rslug="$TODAY-product-ia-probe"
+echo "$out" | grep -q '已认领' || ok=1
+echo "$out" | grep -q 'notes/' || ok=1
+[ -f "$dir/.planning/$rslug/plan.md" ] || ok=1
+[ -f "$dir/.planning/$rslug/progress.md" ] || ok=1
+[ -f "$dir/.planning/$rslug/notes/index.md" ] || ok=1
+grep -q "notes：product ia probe" "$dir/.planning/$rslug/notes/index.md" || ok=1
+grep -q "工作区：.planning/$rslug/" "$dir/TASKS.md" || ok=1
+# 进行中仍带时间盒时再 start --workspace 应复用、不丢 notes
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" start "product ia probe" --workspace --date "$TODAY")
+echo "$out" | grep -q '工作区已存在' || ok=1
+[ -f "$dir/.planning/$rslug/notes/index.md" ] || ok=1
+report "引擎 start：调研区 --workspace 复制 notes/index.md，普通复用不覆盖" $ok
 
 # ── 汇总 ───────────────────────────────────────────────────────
 echo "-----"

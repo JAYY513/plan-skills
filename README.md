@@ -7,7 +7,7 @@
 | 技能 | 作用 |
 |---|---|
 | `plan-init` | 项目启动时初始化计划体系：创建 SPEC.md（锚）、ROADMAP.md（里程碑 + 产出存档 + MVP/P0/P1 范围分桶）、TASKS.md（当前任务）、INBOX.md（想法停车场）、FINDINGS.md（调研知识库），并向 AGENTS.md 注入自动落盘判断矩阵。全新初始化每个项目只运行一次；已初始化项目重跑时进入升级评估（升级 / 重置 / 不动三选一），不覆盖用户数据 |
-| `plan-task` | 任务全生命周期（自动驾驶）：分流判断（TASKS / INBOX / FINDINGS）、0.5~2 天粒度控制与 DoD 生成、开工自动建 `.planning/` 工作区、2-Action 落盘纪律、完成对齐门（FINDINGS 对得上交付）再三合一与 ✅ 核对。曾用名：`new-task` + `task-plan`（两技能已合并） |
+| `plan-task` | 任务全生命周期（自动驾驶）：分流判断（TASKS / INBOX / FINDINGS / notes）、0.5~2 天粒度控制与 DoD 生成、开工自动建 `.planning/` 工作区、2-Action 落盘纪律、完成对齐门（FINDINGS 对得上交付）再三合一与 ✅ 核对。曾用名：`new-task` + `task-plan`（两技能已合并） |
 | `plan-review` | 事件驱动的计划变更门：里程碑验收与交接（归档产出 + 启动下一里程碑首批任务）、停滞任务清理、INBOX 裁决、`.planning/` 工作区兜底、文档防腐化。曾用名：`weekly-review` |
 
 ## 安装
@@ -45,7 +45,8 @@ npx skills add JAYY513/plan-skills --skill plan-review
 | "这个云同步功能以后再说" | 归入 ROADMAP 的 P1 桶（或先停 INBOX） | 写前确认 |
 | "接下来做登录页" | 录入 TASKS.md，拆 0.5~2 天粒度，带 DoD | 不问，写后告知一句 |
 | "我试过 X 方案，不行，因为……" | 落 FINDINGS.md（失败尝试，含原因） | 不问，写后告知 |
-| "开工 / 开始做 X" | 认领任务；跨会话大任务自动建 `.planning/` 工作区 | 不问，写后告知 |
+| "分析了几章 / 对比表 / 长摘录" | 写入该任务 `.planning/<slug>/notes/`；FINDINGS 只留结论 + 材料指针 | 不问，写后告知 |
+| "开工 / 开始做 X" | 认领任务；跨会话大任务 / 调研探针自动建 `.planning/` 工作区 | 不问，写后告知 |
 | "做完了" | 核对 DoD → 对齐门（FINDINGS 对得上交付）→ 三合一归档 → 标 ✅ | 知识库自己改；影响计划停 INBOX；拿不准问一句 |
 | "周回顾 / 这个阶段做完了" | 跑 plan-review：验收、交接、裁决、体系自检 | 计划变更处确认 |
 
@@ -66,20 +67,23 @@ npx skills add JAYY513/plan-skills --skill plan-review
 - **装完怎么验证 hooks 真的挂上了？** 跑自检脚本：`sh .agents/skills/plan-task/hooks/plan-doctor.sh`（Windows PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File .agents\skills\plan-task\hooks\plan-doctor.ps1`），逐项输出 PASS / WARN / FAIL，快速定位"静默无 hook"问题；`--global` 只查全局安装
 - **想临时关掉 hooks？** 设环境变量 `PLANNING_HOOKS_DISABLED=1`，全部 hook 立即静默（plan-doctor 是诊断工具，不受此变量影响）
 - **怎么更新已安装的技能？** 用 `npx skills update`——重新执行 `npx skills add` 不会自动更新已装技能
-- **日常要看哪个文件？** 平时只看 TASKS.md（做什么）；讨论结论查 FINDINGS.md；阶段进度看 ROADMAP.md 的 ▶；SPEC.md 和 INBOX.md 不需要日常看
+- **日常要看哪个文件？** 平时只看 TASKS.md（做什么）；讨论结论查 FINDINGS.md；细节顺着「材料」打开该任务 notes/；阶段进度看 ROADMAP.md 的 ▶；SPEC.md 和 INBOX.md 不需要日常看
 - **多久跑一次 plan-review？** 事件驱动：里程碑验收通过时必跑；其余随意——感觉计划乱了、INBOX 积压了就可以跑，单次 ≤30 分钟
 
-## 双层体系：项目级 vs 单任务级
+## 分层：状态、现场、已验证规则
 
-项目级 5 文件是每条信息的唯一的家；`.planning/` 是单任务的临时工作区，只放执行过程，禁止存放最终结论。
+项目级 5 文件管状态与结论；`.planning/` 是单任务的临时现场（过程 + 可选调研正文）；已验证、以后改代码还要遵守的规则才进 wiki / SPEC / AGENTS。
 
 ```
 <项目根>/
-├── SPEC.md / ROADMAP.md / TASKS.md / INBOX.md / FINDINGS.md   # 项目级：唯一信息家
-└── .planning/                    # 单任务级：临时工作区
+├── SPEC.md / ROADMAP.md / TASKS.md / INBOX.md / FINDINGS.md   # 状态 + 一段话结论
+├── docs/01-wiki/                 # 已验证规则（按需读取）
+└── .planning/                    # 单任务临时工作区
     ├── 2026-06-08-lsp-client/    # 活跃工作区（建议 gitignore）
-    │   ├── plan.md               #   步骤 checklist（执行顺序，不设 DoD）+ 当前位置
-    │   └── progress.md           #   过程日志 + 顶部 postmortem 区
+    │   ├── plan.md               #   步骤 checklist + 当前位置
+    │   ├── progress.md           #   过程日志 + 顶部 postmortem
+    │   └── notes/                #   调研正文（有材料才建；无完成勾）
+    │       └── index.md
     └── done/                     # 已归档（提交入库，永不修改，只读）
         └── 2026-05-30-hashline-core/
 ```
@@ -87,8 +91,10 @@ npx skills add JAYY513/plan-skills --skill plan-review
 归档规则：
 
 - 任务完成：对齐门通过后才走三合一（回填 FINDINGS + postmortem + 移入 done/）。知识库冲突自己改；影响计划停 INBOX，不挡 ✅；缺一件不许标 ✅
-- `.planning/` 活跃区建议 gitignore，`.planning/done/` 提交入库——完成历史不删
+- 调研结论进 FINDINGS；章节 / 对比表 / 摘录进该任务 `notes/`。notes 还要改或还要实施 → 不要 `finish`
+- `.planning/` 活跃区建议 gitignore，所以材料必须当轮写入；`.planning/done/` 提交入库——完成历史不删
 - 归档后永不修改；漏归档 / 停滞的工作区由 plan-review 兜底
+- `docs/research/` 不是本体系的默认落点（查重会把草稿当成已调研）
 
 ## 可选 hook 层（薄壳 + 单一引擎）
 
@@ -107,9 +113,9 @@ npx skills add JAYY513/plan-skills --skill plan-review
 - **session-start**：会话开始先注入 **SPEC 红线**（「不做什么」边界 + 技术选型，防执行期隐式漂移，上限 12 行截断），再注入当前里程碑 + 进行中任务 + 活跃工作区列表 + 主动提示行（进行中任务数 / INBOX 待裁决数）
 - **user-prompt-submit**：每次用户消息提交时重新注入进行中任务**原文**（TASKS.md「进行中」段含 DoD，超 60 行截断）+ 当前里程碑一行 + 活跃工作区一行，抗 context rot。**节流**：注入内容与上次完全相同时只输出一行摘要（计划状态无变化），不重复刷全文；`PLANNING_HOOKS_NO_THROTTLE=1` 可关闭节流
 - **pre-tool-use**：执行类工具前注入当前任务 + 工作区 plan.md「当前位置」摘要。**节流**：内容未变且距上次输出 < 10 分钟 → 静默
-- **post-tool-use**：写代码文件后提醒更新 progress.md / 勾选 plan.md 步骤。**节流**：同 pre-tool-use
+- **post-tool-use**：写代码文件后提醒更新 progress.md / 勾选 plan.md 步骤；若工作区已有 `notes/`，再催材料落盘。**节流**：同 pre-tool-use
 - **stop-gate**：会话收尾双门校验——①存在活跃工作区但关联任务未标 ✅（按 plan.md「关联 TASKS 条目」精确匹配，postmortem 已固化兜底）→ 阻止并提示三合一动作；②「进行中」仍有任务且无任何工作区痕迹 → 阻止并提示完成或移回待办；**当天豁免**：开始日期 = 今天的进行中任务不被门②阻止（当天认领的小任务不再误伤），隔天遗留或未写开始日期的仍阻止
-- **pre-compact**：上下文压缩前提醒把进展 / 「当前位置」抢写进工作区，防漂移
+- **pre-compact**：上下文压缩前提醒把进展 / 「当前位置」抢写进工作区；若已有 `notes/`，再催一句材料落盘
 - **permission-request**（仅 Codex）：权限确认弹窗时注入一行当前任务上下文
 
 平台差异：Claude Code 挂前 6 个（无 PermissionRequest 机制，与参考项目一致不挂）；Codex 7 个全挂（见 `hooks/codex/hooks.json`）；OpenCode 无 shell hook 机制。
@@ -133,9 +139,10 @@ hook 脚本单一来源在 `skills/plan-task/hooks/`（plan-task 是执行期技
 - 任务层乱是正常的，不需要治；锚（SPEC）和路标（ROADMAP）不许随便动
 - 新想法一律先进 INBOX.md，禁止当场改 ROADMAP.md / SPEC.md
 - 调研结论一律落 FINDINGS.md，跨会话不丢；失败尝试也记录，避免重复踩坑
+- 详细调研正文（章节 / 对比表 / 摘录）写入该任务 `.planning/<slug>/notes/`，FINDINGS 只引用；notes 没有完成态
 - 任务完成时 FINDINGS 必须对得上交付；知识库冲突自己改，影响计划停 INBOX，拿不准才问
 - 完成历史不删除：任务归档到 ROADMAP 里程碑下，随时能回答"这个阶段做了什么"
-- 每条信息只有一个家，其他文件只引用不复制
+- 每条信息只有一个家：结论 → FINDINGS；材料 → notes/；日志 → progress.md；其他文件只引用不复制
 - 计划维护时间红线：每天 ≤10 分钟，回顾单次 ≤30 分钟
 
 ## License

@@ -114,6 +114,21 @@ function taskField(doc, task, fieldRe) {
 const RE_START_DATE = /^-\s*\**开始(日期)?\**\s*[:：]\s*(.+)$/;
 const RE_DONE_DATE = /^-\s*\**完成(日期)?\**\s*[:：]\s*(.+)$/;
 const RE_WORKSPACE = /^-\s*\**工作区\**\s*[:：]\s*(.+)$/;
+const RE_TIMEBOX = /^-\s*\**时间盒\**\s*[:：]/;
+
+/** 任务块是否带「时间盒」（调研探针的持久标记，移入进行中后仍在）。 */
+function taskHasTimebox(doc, task) {
+  if (!doc || !task) return false;
+  for (let i = task.start + 1; i < task.end; i++) {
+    if (RE_TIMEBOX.test(doc.lines[i])) return true;
+  }
+  return false;
+}
+
+/** 工作区是否已有 notes/（有才催材料落盘，避免逼出空目录）。 */
+function workspaceHasNotes(root, name) {
+  return isDir(path.join(root, '.planning', name, 'notes'));
+}
 
 /** 任务块尾部插入位置：最后一个非空行之后。 */
 function findBlockTail(doc, task) {
@@ -385,14 +400,19 @@ function hookPostToolUse(root) {
   const active = activeWorkspaces(root);
   if (!active.length) return 0;
 
+  const withNotes = active.filter((n) => workspaceHasNotes(root, n));
   const cache = loadCache(root);
-  const hash = sha1(active.join(' '));
+  const hash = sha1(active.join(' ') + '|notes:' + withNotes.join(' '));
   const now = Date.now();
   if (!throttleOff() && cache.post && cache.post.hash === hash && now - (cache.post.ts || 0) < 600000) return 0;
-  out(
+  const lines = [
     `[plan] 存在活跃工作区： ${active.join(' ')}`,
     '[plan] 若本次修改属于其中任务，请按 2-Action 规则把进展 / 决策 / 错误落 progress.md，并更新 plan.md 的勾选与「当前位置」。',
-  );
+  ];
+  if (withNotes.length) {
+    lines.push(`[plan] 若本次产出了调研材料，写入 ${withNotes.map((n) => `.planning/${n}/notes/`).join(' ')}（先 index.md），不要写进 progress.md。`);
+  }
+  out(...lines);
   cache.post = { hash, ts: now };
   saveCache(root, cache);
   return 0;
@@ -403,6 +423,9 @@ function hookPreCompact(root) {
   if (!active.length) return 0;
   for (const name of active) {
     out(`[plan] 上下文即将压缩：请先把当前进展、决策、「当前位置」更新进 .planning/${name}/progress.md 和 plan.md，再继续`);
+    if (workspaceHasNotes(root, name)) {
+      out(`[plan] 工作区 .planning/${name}/notes/ 已有材料：压缩前把章节 / 对比表 / 摘录写入 notes/（先更新 index.md），不要只留在对话里`);
+    }
   }
   const doc = loadTasksDoc(root);
   if (doc) {
@@ -579,6 +602,7 @@ function cmdStart(root, name, opts) {
   // 工作区处理：移动后重新定位任务块
   const moved = tasksInSection(doc, '进行中').tasks.find((t) => normTitle(t.title) === normTitle(name));
   const wsRel = moved ? taskField(doc, moved, RE_WORKSPACE) : null;
+  const research = fromSection === '调研' || taskHasTimebox(doc, moved);
 
   if (opts.workspace || wsRel) {
     let slugDir;
@@ -597,14 +621,26 @@ function cmdStart(root, name, opts) {
       const planTpl = read(path.join(tplDir, 'plan.md'));
       const progTpl = read(path.join(tplDir, 'progress.md'));
       if (planTpl === null || progTpl === null) { out('[plan] 工作区模板缺失（assets/templates/），请检查技能安装完整性'); return 1; }
+      let notesTpl = null;
+      if (research) {
+        notesTpl = read(path.join(tplDir, 'notes-index.md'));
+        if (notesTpl === null) { out('[plan] 工作区模板缺失（assets/templates/notes-index.md），请检查技能安装完整性'); return 1; }
+      }
       fs.mkdirSync(wsAbs, { recursive: true });
       let planText = fillTemplate(planTpl, name, date);
       if (rebuilt) planText = `⚠️ 工作区曾于 ${localDate()} 丢失，此为重建，历史进度未恢复\n\n${planText}`;
       fs.writeFileSync(path.join(wsAbs, 'plan.md'), planText);
       fs.writeFileSync(path.join(wsAbs, 'progress.md'), fillTemplate(progTpl, name, date));
+      let notesCreated = false;
+      if (notesTpl !== null) {
+        const notesDir = path.join(wsAbs, 'notes');
+        fs.mkdirSync(notesDir, { recursive: true });
+        fs.writeFileSync(path.join(notesDir, 'index.md'), fillTemplate(notesTpl, name, date));
+        notesCreated = true;
+      }
       out(rebuilt
         ? `[plan] 工作区曾丢失，已按原 slug 重建：${slugDir}/（历史进度未恢复）`
-        : `[plan] 已建工作区：${slugDir}/（plan.md + progress.md）`);
+        : `[plan] 已建工作区：${slugDir}/（plan.md + progress.md${notesCreated ? ' + notes/' : ''}）`);
     }
     // 任务行下补工作区关联行（唯一关联据）
     if (moved && !taskField(doc, moved, RE_WORKSPACE)) {
