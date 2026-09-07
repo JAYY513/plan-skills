@@ -47,7 +47,9 @@ npx skills add JAYY513/plan-skills --skill research-init
 | "第一阶段先跑通 xxx 就算成" | 写入 ROADMAP.md 里程碑 + 验收标准 | 写前确认 |
 | "这个云同步功能以后再说" | 归入 ROADMAP 的 P1 桶（或先停 INBOX） | 写前确认 |
 | "接下来做登录页" | 录入 TASKS.md，拆 0.5~2 天粒度，带 DoD | 不问，写后告知一句 |
+| 已写进待做、还没开工，接着聊 | 默认不改那条；对不上先问要不要改；要改改原条目 | 改卡前问一句 |
 | "我试过 X 方案，不行，因为……" | 落 FINDINGS.md（失败尝试，含原因） | 不问，写后告知 |
+| "要不要用 Redis？" / 还没定 | 不进 FINDINGS；未决停 INBOX，还要查进调研 / notes | 不问，写后告知 |
 | "分析了几章 / 对比表 / 长摘录" | 写入该任务 `.planning/<slug>/notes/`；FINDINGS 只留结论 + 材料指针 | 不问，写后告知 |
 | "开工 / 开始做 X" | 认领任务；跨会话大任务 / 调研探针自动建 `.planning/` 工作区 | 不问，写后告知 |
 | "做完了" | 核对 DoD → 对齐门（FINDINGS 对得上交付）→ 三合一归档 → 标 ✅ | 知识库自己改；影响计划停 INBOX；拿不准问一句 |
@@ -96,7 +98,7 @@ npx skills add JAYY513/plan-skills --skill research-init
 归档规则：
 
 - 任务完成：对齐门通过后才走三合一（回填 FINDINGS + postmortem + 移入 done/）。知识库冲突自己改；影响计划停 INBOX，不挡 ✅；缺一件不许标 ✅
-- 调研结论进 FINDINGS；章节 / 对比表 / 摘录进该任务 `notes/`。notes 还要改或还要实施 → 不要 `finish`
+- 已结算结论进 FINDINGS；章节 / 对比表 / 摘录 / 待确认进该任务 `notes/`。提问和未决不进 FINDINGS。notes 还要改或还要实施 → 不要 `finish`
 - `.planning/` 活跃区建议 gitignore，所以材料必须当轮写入；`.planning/done/` 提交入库——完成历史不删
 - 归档后永不修改；漏归档 / 停滞的工作区由 plan-review 兜底
 - `docs/research/` 不是本体系的默认落点（查重会把草稿当成已调研）
@@ -143,7 +145,8 @@ hook 脚本单一来源在 `skills/plan-task/hooks/`（plan-task 是执行期技
 
 - 任务层乱是正常的，不需要治；锚（SPEC）和路标（ROADMAP）不许随便动
 - 新想法一律先进 INBOX.md，禁止当场改 ROADMAP.md / SPEC.md
-- 调研结论一律落 FINDINGS.md，跨会话不丢；失败尝试也记录，避免重复踩坑
+- 已录入尚未开工的任务默认定稿；继续讨论不自动改卡，改范围须用户点头后改原条目
+- 调研结论一律落 FINDINGS.md，跨会话不丢；失败尝试也记录，避免重复踩坑。提问 / 未决 / 待确认不进 FINDINGS
 - 详细调研正文（章节 / 对比表 / 摘录）写入该任务 `.planning/<slug>/notes/`，FINDINGS 只引用；notes 没有完成态
 - 任务完成时 FINDINGS 必须对得上交付；知识库冲突自己改，影响计划停 INBOX，拿不准才问
 - 完成历史不删除：任务归档到 ROADMAP 里程碑下，随时能回答"这个阶段做了什么"

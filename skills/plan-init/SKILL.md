@@ -16,7 +16,7 @@ disable-model-invocation: true
 - ROADMAP.md = 路标：3~5 个里程碑 + 已完成里程碑的产出存档
 - TASKS.md = 施工图：仅当前里程碑的任务，完成的待归档不删
 - INBOX.md = 停车场：新想法、待裁决项
-- FINDINGS.md = 知识库：调研结论、重要发现、失败尝试，跨会话不丢；「索引 + 热区」两层，平时只读索引，历史条目全文由 plan-review 分诊进 FINDINGS.archive.md。详细材料不在本文件，在任务工作区 `notes/`
+- FINDINGS.md = 知识库：已结算的调研结论、以后还要遵守的发现、真试过的失败尝试，跨会话不丢。提问 / 未决不进。「索引 + 热区」两层，平时只读索引，历史条目全文由 plan-review 分诊进 FINDINGS.archive.md。详细材料不在本文件，在任务工作区 `notes/`
 
 ## 模板位置
 
@@ -54,7 +54,7 @@ disable-model-invocation: true
    - 已有锚点 → 用最新 snippet 整体替换「锚点起至下一个 `##` 同级标题（或文件末尾）」之间的整段，其余内容不动
    - 任何情况下不允许出现两份「计划纪律」段
 5. （可选）检测 hook 平台：项目根存在 `.claude/`、`.codex/`、`.opencode/` 目录，或用户声明所用平台 → 询问是否安装对应 hooks（从技能包 `hooks/<platform>/` 复制脚本并按该平台 README 写入配置）。无匹配平台 → 跳过不报错，并向用户说明：无 hook 的平台靠 AGENTS.md 纪律达到等价行为，只是强度较弱（靠自觉而非强制）。
-6. 完成后输出一段简短的使用说明：每天看什么、新想法怎么处理、调研结论落 FINDINGS、详细材料落该任务 notes/、什么时候跑 plan-review（计划变更门）。
+6. 完成后输出一段简短的使用说明：每天看什么、新想法怎么处理、已结算结论落 FINDINGS（提问 / 未决不进）、详细材料落该任务 notes/、什么时候跑 plan-review（计划变更门）。
 
 ### 升级（用户选「升级」时）
 
@@ -92,7 +92,8 @@ disable-model-invocation: true
 
 - 任务层乱是正常的，不需要治；锚（SPEC）和路标（ROADMAP）不许随便动
 - 新想法一律先进 INBOX.md，禁止当场改 ROADMAP.md / SPEC.md
-- 调研结论一律落 FINDINGS.md，禁止只留在对话里；章节 / 对比表 / 长摘录写入该任务 `.planning/<slug>/notes/`，FINDINGS 只引用
+- 已录入尚未开工的任务默认定稿；继续讨论不自动改卡，改范围须用户点头后改原条目
+- 调研结论一律落 FINDINGS.md，禁止只留在对话里；提问 / 未决 / 待确认不进 FINDINGS。章节 / 对比表 / 长摘录写入该任务 `.planning/<slug>/notes/`，FINDINGS 只引用
 - 任务完成时 FINDINGS 必须对得上交付；知识库冲突自己改，影响计划停 INBOX，拿不准才问
 - 每条信息只有一个家：结论 → FINDINGS；材料 → notes/；日志 → progress.md；其他文件只引用不复制
 - 完成历史不删除：任务归档到 ROADMAP 里程碑下，随时能回答"这个阶段做了什么"
