@@ -155,6 +155,8 @@ node <技能目录>/engine/plan.mjs finish "<任务名>"
 - 完成对齐门（FINDINGS 对得上交付、冲突出口）是本技能职责，不走 `plan-review`
 - 计划变更（改 ROADMAP / SPEC / 验收标准）、里程碑交接、INBOX 裁决 → 走 `plan-review`（事件驱动的计划变更门）
 - 计划体系未初始化 → 提示用户先运行 `plan-init`
+- 项目已有实施调研技能（`.agents/skills/` 下 platform-research / impl-research 一类）→ 机制设计或「怎么实现最好」先走该技能；落盘仍按本技能
+- 需要生成这类技能 → `research-init`；没有用户声明的参考源就不要生成
 - 不依赖任何外部技能：DoD 实测核对、对齐门、diff 自查、调研一手来源等纪律均已内置在上述流程中
 
 ## 纪律

@@ -9,6 +9,7 @@
 | `plan-init` | 项目启动时初始化计划体系：创建 SPEC.md（锚）、ROADMAP.md（里程碑 + 产出存档 + MVP/P0/P1 范围分桶）、TASKS.md（当前任务）、INBOX.md（想法停车场）、FINDINGS.md（调研知识库），并向 AGENTS.md 注入自动落盘判断矩阵。全新初始化每个项目只运行一次；已初始化项目重跑时进入升级评估（升级 / 重置 / 不动三选一），不覆盖用户数据 |
 | `plan-task` | 任务全生命周期（自动驾驶）：分流判断（TASKS / INBOX / FINDINGS / notes）、0.5~2 天粒度控制与 DoD 生成、开工自动建 `.planning/` 工作区、2-Action 落盘纪律、完成对齐门（FINDINGS 对得上交付）再三合一与 ✅ 核对。曾用名：`new-task` + `task-plan`（两技能已合并） |
 | `plan-review` | 事件驱动的计划变更门：里程碑验收与交接（归档产出 + 启动下一里程碑首批任务）、停滞任务清理、INBOX 裁决、`.planning/` 工作区兜底、文档防腐化。曾用名：`weekly-review` |
+| `research-init` | 为当前项目生成一份实施调研技能（`.agents/skills/<name>/`）：参考源带角色、证据深度、对比按机制维落盘。结论仍走 FINDINGS / notes，不另开知识库 |
 
 ## 安装
 
@@ -20,6 +21,7 @@ npx skills add JAYY513/plan-skills
 npx skills add JAYY513/plan-skills --skill plan-init
 npx skills add JAYY513/plan-skills --skill plan-task
 npx skills add JAYY513/plan-skills --skill plan-review
+npx skills add JAYY513/plan-skills --skill research-init
 ```
 
 支持 Claude Code、Codex、Cursor、Gemini CLI 等 60+ 兼容 Agent Skills 标准的 agent。
@@ -34,7 +36,8 @@ npx skills add JAYY513/plan-skills --skill plan-review
 
 1. 新项目根目录：让 agent 运行一次 `plan-init`，回答 4 个问题，体系就位
 2. 之后正常开发即可——和 agent 讨论蓝图、阶段计划、"接下来做 X"、调研结论，agent 按 AGENTS.md 中的自动落盘判断矩阵自己决定写进哪个文件（执行层写后告知，锚和路标写前确认），不需要你点名任何技能
-3. 里程碑完成、计划失序或 INBOX 积压时：跑一次 `plan-review`，验收、归档、裁决、启动下一阶段
+3. 需要「参考仓 / 旧项目 / 多平台怎么实现」的可重复调研流程时：跑一次 `research-init`，生成项目本地调研技能；之后说「怎么实现最好」会走那份 SOP，结论仍进 FINDINGS
+4. 里程碑完成、计划失序或 INBOX 积压时：跑一次 `plan-review`，验收、归档、裁决、启动下一阶段
 
 ## 快速上手：说什么 → 发生什么
 
@@ -49,6 +52,7 @@ npx skills add JAYY513/plan-skills --skill plan-review
 | "开工 / 开始做 X" | 认领任务；跨会话大任务 / 调研探针自动建 `.planning/` 工作区 | 不问，写后告知 |
 | "做完了" | 核对 DoD → 对齐门（FINDINGS 对得上交付）→ 三合一归档 → 标 ✅ | 知识库自己改；影响计划停 INBOX；拿不准问一句 |
 | "周回顾 / 这个阶段做完了" | 跑 plan-review：验收、交接、裁决、体系自检 | 计划变更处确认 |
+| "做一个实施调研技能 / 参考平台怎么对比" | 跑 research-init，生成 `.agents/skills/<name>/` | 写前问参考源与失败模式 |
 
 ## hooks 安装（按平台）
 
@@ -69,6 +73,7 @@ npx skills add JAYY513/plan-skills --skill plan-review
 - **怎么更新已安装的技能？** 用 `npx skills update`——重新执行 `npx skills add` 不会自动更新已装技能
 - **日常要看哪个文件？** 平时只看 TASKS.md（做什么）；讨论结论查 FINDINGS.md；细节顺着「材料」打开该任务 notes/；阶段进度看 ROADMAP.md 的 ▶；SPEC.md 和 INBOX.md 不需要日常看
 - **多久跑一次 plan-review？** 事件驱动：里程碑验收通过时必跑；其余随意——感觉计划乱了、INBOX 积压了就可以跑，单次 ≤30 分钟
+- **怎么给项目加「参考仓怎么实现」的调研技能？** 跑 `research-init`，回答参考源和失败模式，生成 `.agents/skills/<name>/`。它不替代 plan-task：结论仍进 FINDINGS，对比表进 notes/。没有声明参考源就不要生成。
 
 ## 分层：状态、现场、已验证规则
 
@@ -132,7 +137,7 @@ git config core.hooksPath .githooks
 sh tests/test-hooks.sh
 ```
 
-hook 脚本单一来源在 `skills/plan-task/hooks/`（plan-task 是执行期技能，hooks 归它管；plan-init / plan-review 是初始化与回顾动作，不挂执行期 hooks），但薄壳里没有任何业务逻辑——真正的逻辑全部在 `skills/plan-task/engine/plan.mjs`。改行为直接改引擎，测试（`tests/test-hooks.sh`）会同时覆盖引擎命令、hook 输出文本、薄壳透传（含 ps1 冒烟，有 pwsh 才跑）与节流逻辑。
+hook 脚本单一来源在 `skills/plan-task/hooks/`（plan-task 是执行期技能，hooks 归它管；plan-init / plan-review / research-init 是初始化与生成动作，不挂执行期 hooks），但薄壳里没有任何业务逻辑——真正的逻辑全部在 `skills/plan-task/engine/plan.mjs`。改行为直接改引擎，测试（`tests/test-hooks.sh`）会同时覆盖引擎命令、hook 输出文本、薄壳透传（含 ps1 冒烟，有 pwsh 才跑）与节流逻辑。
 
 ## 设计原则
 
