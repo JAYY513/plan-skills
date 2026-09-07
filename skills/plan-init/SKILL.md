@@ -18,6 +18,20 @@ disable-model-invocation: true
 - INBOX.md = 停车场：新想法、待裁决项
 - FINDINGS.md = 知识库：调研结论、重要发现、失败尝试，跨会话不丢；「索引 + 热区」两层，平时只读索引，历史条目全文由 plan-review 分诊进 FINDINGS.archive.md。详细材料不在本文件，在任务工作区 `notes/`
 
+## 模板位置
+
+`assets/templates/` 是**本技能目录**的子目录，与本 `SKILL.md` 同级——不是项目根。正在读本文件 ⇒ 模板就在旁边。agent 自己打开，禁止向用户要正文、路径、或「改哪几个文件」。
+
+按序找，命中即停：
+
+1. 与本 `SKILL.md` 同目录的 `assets/templates/`（全局安装即 `~/.agents/skills/plan-init/assets/templates/`，Windows：`%USERPROFILE%\.agents\skills\plan-init\assets\templates\`）
+2. `<项目根>/.agents/skills/plan-init/assets/templates/`
+3. 搜文件名 `plan-init/assets/templates/FINDINGS.md`
+
+找不到 → 告诉用户「技能目录里没有 plan-init 模板」，不要改任何计划文件。
+
+内含：`SPEC.md` `ROADMAP.md` `TASKS.md` `INBOX.md` `FINDINGS.md` `AGENTS.snippet.md`。
+
 ## 执行步骤
 
 1. 检查项目根目录是否已存在 SPEC.md / ROADMAP.md / TASKS.md / INBOX.md / FINDINGS.md，按结果分流：
@@ -45,6 +59,19 @@ disable-model-invocation: true
 ### 升级（用户选「升级」时）
 
 跳过步骤 2~3（数据都在现有文件里，不需要重新提问），先按「升级合并规则」逐文件合并，然后执行步骤 4（AGENTS.md 幂等替换——snippet 本身可能已更新）、5、6。
+
+**施工对象（默认全部，不要问用户改哪几个）：**
+
+| 目标（项目根） | 对照模板（技能包内） |
+|---|---|
+| `SPEC.md` | `assets/templates/SPEC.md` |
+| `ROADMAP.md` | `assets/templates/ROADMAP.md` |
+| `TASKS.md` | `assets/templates/TASKS.md` |
+| `INBOX.md` | `assets/templates/INBOX.md` |
+| `FINDINGS.md` | `assets/templates/FINDINGS.md` |
+| `AGENTS.md` | `assets/templates/AGENTS.snippet.md`（走步骤 4，不走下面的 section 矩阵） |
+
+某文件对比后结构无差异 → 跳过并告知，不算失败。模板路径见上文「模板位置」。
 
 ## 升级合并规则
 

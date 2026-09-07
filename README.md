@@ -62,7 +62,7 @@ npx skills add JAYY513/plan-skills --skill plan-review
 
 - **需要 Node 运行时吗？** 需要。引擎（`engine/plan.mjs`）与所有 hook 薄壳依赖 Node ≥ 18；`npx skills` / Claude Code / Codex CLI 生态本身就依赖 Node，正常安装路径下不会缺。万一缺 node：hook 静默退出不阻断会话，`start` / `finish` / `plan-doctor` 报错退出
 - **项目已经做了一半，能中途接入吗？** 能。plan-init 检测到任一计划文件已存在时不会覆盖，而是给出三个选项：升级（结构对齐最新模板、数据原样保留）/ 重置（旧文件备份到 `.planning/legacy-init/` 后重新初始化）/ 不动；回答 4 个问题时按现状填即可
-- **技能更新后，旧项目怎么获得新模板的改进？** `npx skills update` 更新技能包后重跑 plan-init 选「升级」：纪律指令与格式说明对齐新模板，里程碑 / 任务 / 调研条目等用户数据永不覆盖；AGENTS.md 的「计划纪律」段按锚点幂等替换，不会重复追加
+- **技能更新后，旧项目怎么获得新模板的改进？** `npx skills update` 只更新技能包，不会改项目里的 SPEC / TASKS / FINDINGS。之后在该项目里重跑 plan-init 选「升级」：agent **自己**读技能目录 `assets/templates/`（与 plan-init 的 `SKILL.md` 同级；全局安装在 `~/.agents/skills/plan-init/assets/templates/`），按矩阵合并五个状态文件 + 替换 AGENTS.md「计划纪律」段。用户数据永不覆盖。这应当全自动；agent 不得向用户要模板正文
 - **已有 AGENTS.md 会被覆盖吗？** 不会。只动「## 计划纪律」段：没有就追加到文件末尾，已有就整体替换为最新版，其余内容不动
 - **装完怎么验证 hooks 真的挂上了？** 跑自检脚本：`sh .agents/skills/plan-task/hooks/plan-doctor.sh`（Windows PowerShell：`powershell -NoProfile -ExecutionPolicy Bypass -File .agents\skills\plan-task\hooks\plan-doctor.ps1`），逐项输出 PASS / WARN / FAIL，快速定位"静默无 hook"问题；`--global` 只查全局安装
 - **想临时关掉 hooks？** 设环境变量 `PLANNING_HOOKS_DISABLED=1`，全部 hook 立即静默（plan-doctor 是诊断工具，不受此变量影响）
