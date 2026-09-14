@@ -67,6 +67,9 @@ ok=0
 [ $rc -eq 0 ] || ok=1
 echo "$out" | grep -q '当前里程碑：▶ M1：测试里程碑' || ok=1
 echo "$out" | grep -q '标记当前里程碑，同时只许有一个' && ok=1
+n=$(printf '%s\n' "$out" | wc -l)
+[ "$n" -le 8 ] || { ok=1; echo "  ↳ session-start 行数 $n > 8"; }
+
 report "ROADMAP：输出 M1 行且不含注释行" $ok
 
 # ── 用例 3：进行中任务 + INBOX 待裁决 → 提示行数字正确 ─────────
@@ -100,7 +103,11 @@ out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/session-start.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
-echo "$out" | grep -q '提示：进行中任务 2 个，INBOX 待裁决 3 条' || ok=1
+echo "$out" | grep -q '提示：进行中 2 个，INBOX 待裁决 3 条' || ok=1
+n=$(printf '%s\n' "$out" | wc -l)
+[ "$n" -le 8 ] || { ok=1; echo "  ↳ session-start 行数 $n > 8"; }
+echo "$out" | grep -q '进行中：任务甲、任务乙 ｜ 下一张：任务丙' || ok=1
+
 report "进行中任务 + INBOX 待裁决：提示行数字正确" $ok
 
 # ── 用例 4：活跃工作区无 postmortem → stop-gate 阻止且 exit 2；补齐后 exit 0 ──
@@ -177,7 +184,7 @@ ok=0
 [ -z "$out" ] || ok=1
 report "user-prompt-submit：空目录静默 exit 0" $ok
 
-# 有状态：输出里程碑 + 进行中段原文（含 DoD）+ 工作区一行，且不含 INBOX 计数提示行
+# 有状态：冷启动心跳恰好 1 行，含指针，不含原文 / DoD / 工作区
 dir=$(mk)
 cat > "$dir/ROADMAP.md" <<'EOF'
 # ROADMAP
@@ -205,37 +212,35 @@ out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
-echo "$out" | grep -q '当前里程碑：▶ M1：测试里程碑' || ok=1
-echo "$out" | grep -q '进行中任务（TASKS.md 原文）：' || ok=1
-echo "$out" | grep -q '### 任务甲' || ok=1
-echo "$out" | grep -q 'DoD：点击中断后输出立刻停止，手动验证通过' || ok=1
-echo "$out" | grep -q '活跃工作区： 2026-07-18-demo-task' || ok=1
+echo "$out" | grep -q '进行中：任务甲（1）' || ok=1
+echo "$out" | grep -q 'plan.mjs task "任务甲"' || ok=1
+n=$(printf '%s\n' "$out" | wc -l)
+[ "$n" -eq 1 ] || { ok=1; echo "  ↳ 心跳行数 $n != 1"; }
+echo "$out" | grep -q '当前里程碑' && ok=1
+echo "$out" | grep -q 'TASKS.md 原文' && ok=1
+echo "$out" | grep -q 'DoD：点击中断后输出立刻停止，手动验证通过' && ok=1
+echo "$out" | grep -q '活跃工作区' && ok=1
 echo "$out" | grep -q '任务乙' && ok=1
-echo "$out" | grep -q 'INBOX' && ok=1
-report "user-prompt-submit：进行中段原文注入（含 DoD）且不越界" $ok
+report "user-prompt-submit：心跳一行且不注入原文" $ok
 
-# 进行中段超 60 行 → 截断并附提示行
+# 无进行中 → 指向 next 的 1 行心跳
 dir=$(mk)
-{
-  echo '# TASKS'
-  echo ''
-  echo '## 进行中'
-  echo ''
-  echo '### 长任务'
-  i=0; while [ $i -lt 70 ]; do echo "- 细节行 $i"; i=$((i + 1)); done
-  echo ''
-  echo '## 已拆好（待做）'
-  echo ''
-  echo '### 不应出现'
-} > "$dir/TASKS.md"
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+## 进行中
+## 已拆好（待做）
+### 不应出现
+EOF
 out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
-echo "$out" | grep -q '进行中段过长已截断，详见 TASKS.md' || ok=1
-echo "$out" | grep -q '细节行 69' && ok=1
-echo "$out" | grep -q '不应出现' && ok=1
-report "user-prompt-submit：进行中段超 60 行截断" $ok
+echo "$out" | grep -q 'plan.mjs next' || ok=1
+n=$(printf '%s\n' "$out" | wc -l)
+[ "$n" -eq 1 ] || { ok=1; echo "  ↳ 无进行中心跳行数 $n != 1"; }
+report "user-prompt-submit：无进行中指向 next" $ok
+
+
 
 # 禁用变量 → 静默 exit 0
 dir=$(mk)
@@ -337,6 +342,9 @@ ok=0
 echo "$out" | grep -q 'FAIL 0' || ok=1
 echo "$out" | grep -q '\[PASS\] Claude Code hooks 注册' || ok=1
 echo "$out" | grep -q '\[PASS\] Codex hooks 注册' || ok=1
+echo "$out" | grep -q '\[WARN\] FINDINGS 索引: 缺 plan-index' || ok=1
+echo "$out" | grep -q '\[FAIL\] FINDINGS 索引' && ok=1
+
 report "plan-doctor：完整假安装全 PASS 且 exit 0" $ok
 
 # ── 用例 11：stop-gate 门二（未完成阻止）───────────────────────
@@ -437,7 +445,7 @@ ok=0
 echo "$out" | grep -q '都注册了 plan-task，hook 会重复触发' || ok=1
 report "plan-doctor：两处都注册 plan-task → WARN 重复触发" $ok
 
-# ── 用例 14：user-prompt-submit 节流（内容未变只发摘要，变了恢复全量）──
+# ── 用例 14：比较集不变心跳 1 行，变了卡片 ≤15 行 ──
 dir=$(mk)
 cat > "$dir/TASKS.md" <<'EOF'
 # TASKS
@@ -449,15 +457,23 @@ cat > "$dir/TASKS.md" <<'EOF'
 - DoD：验证点
 
 ## 已拆好（待做）
+
+### 任务乙
+
+- DoD：乙的完成标准
 EOF
 out1=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
 out2=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
 ok=0
-echo "$out1" | grep -q '进行中任务（TASKS.md 原文）：' || ok=1
-echo "$out2" | grep -q '计划状态无变化（进行中任务 1 个）' || ok=1
-echo "$out2" | grep -q '原文' && ok=1
+echo "$out1" | grep -q '进行中：任务甲（1）' || ok=1
+echo "$out1" | grep -q 'plan.mjs task "任务甲"' || ok=1
+n=$(printf '%s\n' "$out1" | wc -l)
+[ "$n" -eq 1 ] || { ok=1; echo "  ↳ 冷启动心跳 $n != 1"; }
+echo "$out2" | grep -q 'plan.mjs task "任务甲"' || ok=1
+n=$(printf '%s\n' "$out2" | wc -l)
+[ "$n" -eq 1 ] || { ok=1; echo "  ↳ 不变心跳 $n != 1"; }
+echo "$out2" | grep -q '提示：' && ok=1
 [ -f "$dir/.planning/.hook-cache.json" ] || ok=1
-# 修改进行中段 → 恢复全量
 cat > "$dir/TASKS.md" <<'EOF'
 # TASKS
 
@@ -465,20 +481,47 @@ cat > "$dir/TASKS.md" <<'EOF'
 
 ### 任务甲
 
-### 任务乙
+- DoD：改了也不该出卡片
 
 ## 已拆好（待做）
+
+### 任务乙
+
+- DoD：乙的完成标准
+EOF
+out_dod=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+n=$(printf '%s\n' "$out_dod" | wc -l)
+[ "$n" -eq 1 ] || { ok=1; echo "  ↳ DoD 不进比较集却出了 $n 行"; }
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+### 任务丙
+
+## 已拆好（待做）
+
+### 任务乙
+
+- DoD：乙的完成标准
 EOF
 out3=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
-echo "$out3" | grep -q '进行中任务（TASKS.md 原文）：' || ok=1
-echo "$out3" | grep -q '任务乙' || ok=1
-# PLANNING_HOOKS_NO_THROTTLE=1 → 始终全量
+echo "$out3" | grep -q '进行中：任务丙' || ok=1
+echo "$out3" | grep -q 'DoD：乙的完成标准' || ok=1
+echo "$out3" | grep -q 'plan.mjs task "任务丙"' || ok=1
+n=$(printf '%s\n' "$out3" | wc -l)
+[ "$n" -le 15 ] || { ok=1; echo "  ↳ 卡片行数 $n > 15"; }
+[ "$n" -gt 1 ] || { ok=1; echo "  ↳ 变化应出卡片，实际 $n 行"; }
 out4=$(PLANNING_HOOKS_NO_THROTTLE=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
 out5=$(PLANNING_HOOKS_NO_THROTTLE=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
-echo "$out4" | grep -q '原文' || ok=1
-echo "$out5" | grep -q '原文' || ok=1
-echo "$out5" | grep -q '无变化' && ok=1
-report "user-prompt-submit 节流：未变发摘要、变了恢复全量、NO_THROTTLE 始终全量" $ok
+echo "$out4" | grep -q 'plan.mjs task "任务丙"' || ok=1
+n=$(printf '%s\n' "$out4" | wc -l)
+[ "$n" -eq 1 ] || { ok=1; echo "  ↳ NO_THROTTLE 应心跳 $n"; }
+echo "$out5" | grep -q 'plan.mjs task "任务丙"' || ok=1
+echo "$out5" | grep -q '提示：' && ok=1
+report "user-prompt-submit 比较集：不变心跳、变了卡片、NO_THROTTLE 始终心跳" $ok
+
+
 
 # ── 用例 15：stop-gate 门二日期规则（当天开工豁免，隔天阻止）──
 dir=$(mk)
@@ -684,7 +727,10 @@ echo "$out" | grep -q 'SPEC 红线' || ok=1
 echo "$out" | grep -q '边界：不做 GUI 界面' || ok=1
 echo "$out" | grep -q '边界：不接第三方支付' || ok=1
 echo "$out" | grep -q '选型：运行时 = Node.js' || ok=1
-echo "$out" | grep -q '选型：持久化 = JSON 文件' || ok=1
+echo "$out" | grep -q '其余红线见 SPEC.md' || ok=1
+n=$(printf '%s\n' "$out" | wc -l)
+[ "$n" -le 8 ] || { ok=1; echo "  ↳ session-start 行数 $n > 8"; }
+
 # 未填充的空模板（含注释 + 示例行 + 占位符）不应产生红线噪音
 dir2=$(mk)
 cat > "$dir2/SPEC.md" <<'EOF'
@@ -704,15 +750,18 @@ touch "$dir2/TASKS.md"
 out2=$(PLANNING_ROOT="$dir2" node "$ENGINE" hook session-start)
 echo "$out2" | grep -q 'SPEC 红线' && ok=1
 echo "$out2" | grep -q '示例：后端框架' && ok=1
-# 超长 SPEC → 截断（上限 12 行 + 提示）
+# 超长 SPEC → 截断（与 status 同上限 3 条 + 提示）
 dir3=$(mk)
 { echo '# SPEC'; echo; echo '## 不做什么（边界）'; echo; for i in $(seq 1 15); do echo "- 边界条目 $i"; done; } > "$dir3/SPEC.md"
 touch "$dir3/TASKS.md"
 out3=$(PLANNING_ROOT="$dir3" node "$ENGINE" hook session-start)
 n=$(echo "$out3" | grep -c '边界：边界条目')
-[ "$n" -eq 12 ] || { ok=1; echo "  ↳ 截断应保留 12 条，实际 $n"; }
-echo "$out3" | grep -q '已截断' || ok=1
+[ "$n" -eq 3 ] || { ok=1; echo "  ↳ 截断应保留 3 条，实际 $n"; }
+echo "$out3" | grep -q '其余红线见 SPEC.md' || ok=1
+n=$(printf '%s\n' "$out3" | wc -l)
+[ "$n" -le 8 ] || { ok=1; echo "  ↳ 超长红线 session-start 行数 $n > 8"; }
 report "session-start 注入 SPEC 红线（边界+选型）、空模板无噪音、超长截断" $ok
+
 
 # ── 用例 21：调研区 start --workspace 复制 notes/index.md ──
 dir=$(mk)
@@ -749,6 +798,285 @@ out=$(PLANNING_ROOT="$dir" node "$ENGINE" start "product ia probe" --workspace -
 echo "$out" | grep -q '工作区已存在' || ok=1
 [ -f "$dir/.planning/$rslug/notes/index.md" ] || ok=1
 report "引擎 start：调研区 --workspace 复制 notes/index.md，普通复用不覆盖" $ok
+
+# ── 用例 22：status / next / findings / inbox（查询步 1）──
+dir=$(mk)
+cat > "$dir/ROADMAP.md" <<'EOF'
+# ROADMAP
+## ▶ M2 tag 过滤
+EOF
+cat > "$dir/SPEC.md" <<'EOF'
+# SPEC
+## 不做什么（边界）
+- 不做云同步
+## 技术选型与理由
+| 决策 | 选择 | 理由 | 日期 |
+|---|---|---|---|
+| CLI 参数解析 | commander.js | 团队熟 | 2026-01-01 |
+EOF
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+## 进行中
+### store.js 扩展 tag 字段
+- DoD：tag 字段可读写
+## 已拆好（待做）
+### list 命令支持 --tag 过滤
+- DoD：list --tag 过滤可用
+## 已完成（待归档）
+### list --tag 过滤
+- DoD：done
+EOF
+cat > "$dir/FINDINGS.md" <<'EOF'
+# FINDINGS
+## 热条目
+### F2：旧数据缺 tags 会崩
+- 日期：2026-07-18
+- 来源：开发中发现
+- 标签：数据
+- 影响：影响 M2
+- 状态：有效
+- 结论：缺字段要兼容
+### F3：逗号拆 tag 失败
+- 日期：2026-07-19
+- 来源：失败尝试
+- 标签：数据
+- 状态：有效
+### F1：CLI 框架选型——commander.js 满足需求
+- 日期：2026-07-01
+- 来源：调研探针
+- 影响：影响 SPEC 技术选型：CLI
+- 状态：有效
+EOF
+cat > "$dir/INBOX.md" <<'EOF'
+# INBOX
+## 待裁决
+- [ ] 2026-07-20 ⚪ list --tag 过滤 — 灵感
+- [ ] 2026-07-21 ⚪ 云同步支持 — 灵感
+- 已解决：无关任务 ✅（2026-07-22）
+## 已裁决（存档）
+- 2026-07-01 旧想法 → 删除 — 不做
+EOF
+
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" status)
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+echo "$out" | grep -q 'SPEC 红线' || ok=1
+echo "$out" | grep -q '边界：不做云同步' || ok=1
+echo "$out" | grep -q '选型：CLI 参数解析 = commander.js' || ok=1
+echo "$out" | grep -q '当前里程碑：▶ M2 tag 过滤' || ok=1
+echo "$out" | grep -q '进行中：store.js 扩展 tag 字段 ｜ 下一张：list 命令支持 --tag 过滤' || ok=1
+echo "$out" | grep -q '提示：进行中 1 个，INBOX 待裁决 1 条' || ok=1
+echo "$out" | grep -q 'DoD：tag 字段可读写' && ok=1
+n=$(printf '%s\n' "$out" | wc -l)
+[ "$n" -le 8 ] || { ok=1; echo "  ↳ status 行数 $n > 8"; }
+js=$(PLANNING_ROOT="$dir" node "$ENGINE" status --json)
+echo "$js" | grep -q '"inProgress"' || ok=1
+echo "$js" | grep -q 'store.js 扩展 tag 字段' || ok=1
+
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" next)
+echo "$out" | grep -q '下一张：list 命令支持 --tag 过滤' || ok=1
+echo "$out" | grep -q 'DoD：list --tag 过滤可用' || ok=1
+
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings)
+echo "$out" | grep -q 'F2 | 2026-07-18 | 数据 | 有效 | 旧数据缺 tags 会崩' || ok=1
+echo "$out" | grep -q 'F1 | 2026-07-01 | 未分类 | 有效 | CLI 框架选型' || ok=1
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings --tag 数据)
+echo "$out" | grep -q 'F2 |' || ok=1
+echo "$out" | grep -q 'F3 |' || ok=1
+echo "$out" | grep -q 'F1 |' && ok=1
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings --impact spec)
+echo "$out" | grep -q 'F1 |' || ok=1
+echo "$out" | grep -q 'F2 |' && ok=1
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings --full F2)
+echo "$out" | grep -q '### F2：旧数据缺 tags 会崩' || ok=1
+echo "$out" | grep -q '缺字段要兼容' || ok=1
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings --full F99)
+rc=$?
+[ $rc -eq 2 ] || ok=1
+echo "$out" | grep -q '未找到 F99' || ok=1
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings --nope)
+rc=$?
+[ $rc -eq 3 ] || ok=1
+
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" inbox)
+echo "$out" | grep -q 'list --tag 过滤' || ok=1
+echo "$out" | grep -q '云同步支持' && ok=1
+echo "$out" | grep -q '疑似已实现' || ok=1
+echo "$out" | grep -q 'list --tag 过滤' || ok=1
+dir2=$(mk)
+touch "$dir2/TASKS.md"
+out=$(PLANNING_ROOT="$dir2" node "$ENGINE" next)
+rc=$?
+[ $rc -eq 0 ] || ok=1
+echo "$out" | grep -q '（无匹配）' || ok=1
+
+report "引擎查询：status/next/findings/inbox 契约与退出码" $ok
+
+
+
+# ── 用例 23：task / ws / links + finish 回写（查询步 2）──
+dir=$(mk)
+mkdir -p "$dir/.planning/demo-ws/notes"
+cat > "$dir/.planning/demo-ws/plan.md" <<'EOF'
+# 任务工作区
+## 当前位置
+- 正在改 store.js
+- 下一步写测试
+- 未提交
+EOF
+echo 'progress body' > "$dir/.planning/demo-ws/progress.md"
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+## 进行中
+### store.js 扩展 tag 字段
+- DoD：tag 可读写
+- 工作区：.planning/demo-ws/
+- 依据：F2
+- 来自：INBOX 云同步支持
+- 前置：list 命令支持 --tag 过滤
+## 已拆好（待做）
+### list 命令支持 --tag 过滤
+- DoD：过滤可用
+## 已完成（待归档）
+EOF
+cat > "$dir/FINDINGS.md" <<'EOF'
+# FINDINGS
+## 热条目
+### F2：旧数据缺 tags
+- 日期：2026-07-18
+- 来源：外部输入
+- 标签：数据
+- 状态：有效
+- 过程追溯：.planning/demo-ws/progress.md
+EOF
+cat > "$dir/INBOX.md" <<'EOF'
+# INBOX
+## 待裁决
+- [ ] 2026-07-20 ⚪ 云同步支持 — 灵感
+## 已裁决（存档）
+EOF
+
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" task "store.js 扩展 tag 字段")
+rc=$?
+ok=0
+[ $rc -eq 0 ] || ok=1
+echo "$out" | grep -q '### store.js 扩展 tag 字段' || ok=1
+echo "$out" | grep -q 'DoD：tag 可读写' || ok=1
+echo "$out" | grep -q '依据：F2' || ok=1
+echo "$out" | grep -q '来自：INBOX 云同步支持' || ok=1
+echo "$out" | grep -q 'F2 | 2026-07-18 | 数据 | 有效 | 旧数据缺 tags' || ok=1
+echo "$out" | grep -q 'INBOX 云同步支持' || ok=1
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" inbox)
+echo "$out" | grep -q '认领中：store.js 扩展 tag 字段' || ok=1
+
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" task "不存在")
+rc=$?
+[ $rc -eq 2 ] || ok=1
+echo "$out" | grep -q '未找到任务：不存在' || ok=1
+
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" ws)
+echo "$out" | grep -q '.planning/demo-ws' || ok=1
+echo "$out" | grep -q '正在改 store.js' || ok=1
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" ws demo-ws)
+echo "$out" | grep -q '正在改 store.js' || ok=1
+echo "$out" | grep -q 'F2 |' || ok=1
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" ws demo-ws --full)
+echo "$out" | grep -q 'progress body' || ok=1
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" ws nosuch)
+rc=$?
+[ $rc -eq 2 ] || ok=1
+echo "$out" | grep -q '未找到工作区：nosuch' || ok=1
+
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" links --orphan)
+echo "$out" | grep -q '（无匹配）' || { ok=1; echo "  ↳ orphan: $out"; }
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" links)
+echo "$out" | grep -q 'INBOX 云同步支持 → 认领中 store.js 扩展 tag 字段' || ok=1
+echo "$out" | grep -q 'F F2 → 催生任务 store.js 扩展 tag 字段' || ok=1
+echo "$out" | grep -q 'T store.js 扩展 tag 字段 → 前置 list 命令支持 --tag 过滤' || ok=1
+
+# finish：回写结论 + 来自翻牌；无索引再生
+cat > "$dir/.planning/demo-ws/progress.md" <<'EOF'
+# progress
+## Postmortem
+- **结论**：→ FINDINGS.md F2
+- **踩过的坑**：无
+- **声明**：本文档为过程记录，结论以 FINDINGS.md 为准。
+EOF
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" finish "store.js 扩展 tag 字段" --date 2026-09-14)
+rc=$?
+[ $rc -eq 0 ] || { ok=1; echo "$out"; }
+echo "$out" | grep -q '已回写结论：F2' || ok=1
+echo "$out" | grep -q '已写 INBOX 已解决' || ok=1
+grep -q '\- 结论：F2' "$dir/TASKS.md" || ok=1
+grep -q '\- 已解决：store.js 扩展 tag 字段 ✅（2026-09-14）' "$dir/INBOX.md" || ok=1
+grep -q 'plan-index' "$dir/FINDINGS.md" || ok=1
+
+sed -n '/^## 待裁决/,/^## 已裁决/p' "$dir/INBOX.md" | grep -q '云同步支持' || ok=1
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" inbox --resolved)
+echo "$out" | grep -q '云同步支持' || ok=1
+echo "$out" | grep -q 'store.js 扩展 tag 字段' || ok=1
+
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" links)
+echo "$out" | grep -q 'T store.js 扩展 tag 字段 → F2' || ok=1
+echo "$out" | grep -q '解决 INBOX 云同步支持' || ok=1
+
+
+# 软警告：无来自、标题相似
+dirw=$(mk)
+cat > "$dirw/TASKS.md" <<'EOF'
+# TASKS
+## 进行中
+### list --tag 过滤
+- DoD：x
+## 已拆好（待做）
+## 已完成（待归档）
+EOF
+cat > "$dirw/INBOX.md" <<'EOF'
+# INBOX
+## 待裁决
+- [ ] 2026-07-20 ⚪ list 命令支持 --tag 过滤 — 灵感
+## 已裁决（存档）
+EOF
+out=$(PLANNING_ROOT="$dirw" node "$ENGINE" finish "list --tag 过滤" --date 2026-09-14)
+rc=$?
+[ $rc -eq 0 ] || ok=1
+echo "$out" | grep -q '与本任务标题相似' || ok=1
+grep -q '已解决' "$dirw/INBOX.md" && ok=1
+
+report "引擎 task/ws/links 与 finish 回写索引" $ok
+
+
+
+# ── 用例 24：reindex 写入 plan-index 受管区 ──
+dir=$(mk)
+ok=0
+cat > "$dir/FINDINGS.md" <<'EOF'
+# FINDINGS
+## 索引
+## 热条目
+### F9：索引再生
+- 日期：2026-09-14
+- 来源：开发中发现
+- 状态：有效
+EOF
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" reindex)
+rc=$?
+[ $rc -eq 0 ] || ok=1
+echo "$out" | grep -q '已再生 FINDINGS 索引（1 条）' || ok=1
+
+grep -q 'F9 | 2026-09-14 | 未分类 | 有效 | 索引再生' "$dir/FINDINGS.md" || ok=1
+
+grep -q 'plan-index:begin' "$dir/FINDINGS.md" || ok=1
+out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings --tag 数据)
+echo "$out" | grep -q '（无匹配）' || ok=1
+for f in SPEC ROADMAP TASKS INBOX; do echo "# $f" > "$dir/$f.md"; done
+dout=$(cd "$dir" && node "$ENGINE" doctor)
+echo "$dout" | grep -q '\[PASS\] FINDINGS 索引: 受管标记存在' || ok=1
+echo "$dout" | grep -q '\[FAIL\] FINDINGS 索引' && ok=1
+report "引擎 reindex 写入 plan-index" $ok
+
+
 
 # ── 汇总 ───────────────────────────────────────────────────────
 echo "-----"

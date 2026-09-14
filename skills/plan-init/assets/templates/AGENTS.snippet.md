@@ -21,8 +21,10 @@
 ### 纪律
 
 - 执行层（TASKS / FINDINGS / INBOX / .planning/）全自动，写后告知一句即可；锚（SPEC）和路标（ROADMAP）写前必须确认
-- SPEC 的「不做什么（边界）」与「技术选型」是执行期红线：配置了 hook 的平台（Claude Code / Codex）会在会话开始时自动注入；无 hook 时（OpenCode / 未配置 / 已禁用）开工前主动读 SPEC.md 这两节对照。执行中若某步会违背边界或选型（如引入被排除的方向、换掉已定技术），先停下与用户确认——这是防「隐式漂移」的护栏
+- hook 可选，不是流程前提。无 hook 时本段 + plan-task / plan-review 技能仍自动实施完整流程：本会话第一次触及计划前跑 `plan.mjs status`（无 node 则读 SPEC「不做什么（边界）」「技术选型」+ TASKS 进行中标题）；查状态用 `status/findings/inbox/task`，不整读 FINDINGS.md / progress.md；开工 `start`、收工对齐门后 `finish`；收尾前自检两门（活跃工作区未 ✅、隔天进行中无工作区）。有 hook 只是少打字。SPEC 红线违背时先停下与用户确认
 - 规则细节见对应技能：任务录入、开工、工作区、完成（含对齐门）→ plan-task；计划变更、里程碑交接、INBOX 裁决 → plan-review。本文件不复述规则条文
+
+
 - 体系也要演化：plan-review 收尾会做「体系自检」（纪律执行度 + 文件使用率 + 演化提案）；平时发现某条纪律执行不下去 / 某文件没人看 → 随手记 INBOX 一条"体系问题"，留待自检时裁决
 - FINDINGS 只收已结算结论（含探针「没结论」）；提问、未决、待确认、过程想法不进热区。失败尝试必须真试过
 - 已录入尚未开工的任务默认定稿；继续讨论不自动改卡。`.planning/` 是同一条任务的现场，开工才建

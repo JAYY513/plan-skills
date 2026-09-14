@@ -10,7 +10,8 @@ disable-model-invocation: true
 
 ## 读取文件
 
-ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文读；FINDINGS.md 读「索引」区与本次相关的条目（按编号取全文）。缺失 → 提示先运行 plan-init。
+有 node 时在项目根跑 plan-task 引擎，不要整读 FINDINGS.md：`status`、`findings`、`inbox`、`links --orphan`。命中主题再用 `findings --full F?`。无 node：ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文；FINDINGS.md 只读「索引」受管区与本次相关条目。缺失计划文件 → 提示先运行 plan-init。
+
 
 ## 执行步骤（按顺序）
 
@@ -30,7 +31,8 @@ ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文读；FINDINGS.md �
      - **归档**：全文移入 FINDINGS.archive.md 对应里程碑小节，FINDINGS.md 索引保留该行
      - **保留**：仍影响下一里程碑 → 留在 FINDINGS.md 热区
      - **导出**：跨项目可复用的外部知识（库坑、通用模式、调研方法）→ 写入个人知识库，条目状态标「已导出」
-   - 分诊后同步更新 FINDINGS.md 顶部索引；热区超过 40 条或 400 行 → 本次强制分诊
+
+   - 分诊后跑 `node <plan-task 技能目录>/engine/plan.mjs reindex` 再生索引（不要手改 `plan-index` 区）；热区超过 40 条或 400 行 → 本次强制分诊
 4. **启动下一里程碑**：将 ▶ 移到下一个里程碑，结合其验收标准 + 上一步的 FINDINGS + 遗留问题，反推出第一批任务（含必要的调研探针，带时间盒和 DoD），按 plan-task 录入流程写入 TASKS.md——「已拆好（待做）」位置即顺序，按建议执行顺序自上而下排列，确保「进行中」+「已拆好」≥ 2 个；MVP 桶已清空时，从 P0 桶取下一里程碑内容（并在 ROADMAP 中标注该里程碑属于哪个桶）
 - 提示用户庆祝一下
 
@@ -62,10 +64,13 @@ ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文读；FINDINGS.md �
 - 相互矛盾的内容 → 以 SPEC.md 为准修正，并询问用户
 - 明显过期的内容（已否决的方案、已完成事项的残留描述）→ 删除；FINDINGS.md 中被推翻的条目不删，把状态改为"已被 F? 推翻"（无论该条目在热区还是归档）
 - FINDINGS 热区里的提问、未决选项、待确认 → 不删编号：等人拍板停 INBOX；还要查进 notes / 调研；探针已到期则改成「没结论」；已拍板则改结论或标「已被 F? 推翻」
+- 跑 `node <plan-task 技能目录>/engine/plan.mjs links --orphan`，清 ⚠️（悬空依据/来自、打不开的材料路径、已 ✅ 且有工作区却无 `- 结论：`）。`--unlinked` 不是毛病，不要当 ⚠️ 清
+
 
 ### 7. 体系自检（自进化，最后 5 分钟）
 不只 review 计划，还要 review "体系自己"——计划内容会演化，工作方式也要演化：
-1. **执行度检查**：找出纪律没被执行的证据——TASKS.md 里缺 DoD 的条目、FINDINGS.md 里缺来源/证据的条目、结论段是问句或未决选项的条目、带「材料」行但路径打不开的条目、`.planning/done/` 里缺 postmortem 的卷宗。不检查 notes 章节是否写全
+1. **执行度检查**：找出纪律没被执行的证据——TASKS.md 里缺 DoD 的条目、FINDINGS.md 里缺来源/证据的条目、结论段是问句或未决选项的条目、带「材料」行但路径打不开的条目、`.planning/done/` 里缺 postmortem 的卷宗、本轮 `links --orphan` 仍留下的 ⚠️。不检查 notes 章节是否写全
+
 2. **使用率检查**：哪个文件整个周期没被读过/写过（如 INBOX 长期为空说明分流没发生，SPEC 从没被引用说明锚没人看）
 3. **演化提案**：基于证据提 1~2 条体系修订（改模板措辞 / 增删纪律 / 调整 AGENTS.md 判断矩阵），**必须用户确认后才改**——提议权在 agent，决定权在人
 - 没发现问题就写"体系健康"，不要硬凑提案
@@ -79,6 +84,8 @@ ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文读；FINDINGS.md �
 - 里程碑交接：<无 ｜ M? 已验收归档，M? 已启动（首批任务 x 个）>
 - 计划变更：<改了什么 + 原因，无则写"无">
 - INBOX 裁决：<x 条并入 / y 条归入 P0/P1 桶 / z 条删除>
+- 关联毛病：<links --orphan 无 ⚠️ ｜ 已清 x 条>
+
 - FINDINGS 新增：<x 条，其中影响计划的 y 条>
 - 体系自检：<健康 ｜ 执行度/使用率问题 + 演化提案（待用户确认）>
 - 下一步聚焦：<1~3 件事>

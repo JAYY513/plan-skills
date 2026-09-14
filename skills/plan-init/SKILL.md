@@ -53,7 +53,8 @@ disable-model-invocation: true
    - 文件不存在或无锚点 → 新建 / 追加 `assets/templates/AGENTS.snippet.md` 内容到文件末尾，保持用户原有内容不动
    - 已有锚点 → 用最新 snippet 整体替换「锚点起至下一个 `##` 同级标题（或文件末尾）」之间的整段，其余内容不动
    - 任何情况下不允许出现两份「计划纪律」段
-5. （可选）检测 hook 平台：项目根存在 `.claude/`、`.codex/`、`.opencode/` 目录，或用户声明所用平台 → 询问是否安装对应 hooks（从技能包 `hooks/<platform>/` 复制脚本并按该平台 README 写入配置）。无匹配平台 → 跳过不报错，并向用户说明：无 hook 的平台靠 AGENTS.md 纪律达到等价行为，只是强度较弱（靠自觉而非强制）。
+5. （可选）检测 hook 平台：项目根存在 `.claude/`、`.codex/`、`.opencode/` 目录，或用户声明所用平台 → 询问是否安装对应 hooks（从技能包 `hooks/<platform>/` 复制脚本并按该平台 README 写入配置）。无匹配平台 → 跳过不报错。完整流程靠 AGENTS.md「计划纪律」+ plan-task / plan-review 技能自动实施；hook 只减少重复注入，不安装也能开工、查状态、`finish`、对齐门。
+
 6. 完成后输出一段简短的使用说明：每天看什么、新想法怎么处理、已结算结论落 FINDINGS（提问 / 未决不进）、详细材料落该任务 notes/、什么时候跑 plan-review（计划变更门）。
 
 ### 升级（用户选「升级」时）

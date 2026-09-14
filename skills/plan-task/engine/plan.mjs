@@ -11,7 +11,7 @@
  * - PLANNING_ROOT 显式指定项目根；否则从 CWD 向上探测 ROADMAP.md / TASKS.md / .planning。
  * - PLANNING_HOOKS_NO_THROTTLE=1 → 关闭注入节流（调试 / 测试用）。
  *
- * 退出码：hook 注入类 0；stop-gate 命中阻止 2；命令类错误 1。
+ * 退出码：hook 注入类 0；stop-gate 命中阻止 2；无计划体系 1；具名实体缺失/歧义 2；用法/未知 flag 3。
  * 需要 Node.js >= 18，零第三方依赖。
  */
 
@@ -115,6 +115,11 @@ const RE_START_DATE = /^-\s*\**开始(日期)?\**\s*[:：]\s*(.+)$/;
 const RE_DONE_DATE = /^-\s*\**完成(日期)?\**\s*[:：]\s*(.+)$/;
 const RE_WORKSPACE = /^-\s*\**工作区\**\s*[:：]\s*(.+)$/;
 const RE_TIMEBOX = /^-\s*\**时间盒\**\s*[:：]/;
+const RE_PRE = /^-\s*\**前置\**\s*[:：]\s*(.+)$/;
+const RE_TAG = /^-\s*\**标签\**\s*[:：]\s*(.+)$/;
+const RE_BASIS = /^-\s*\**依据\**\s*[:：]\s*(.+)$/;
+const RE_FROM = /^-\s*\**来自\**\s*[:：]\s*(.+)$/;
+const RE_CONC = /^-\s*\**结论\**\s*[:：]\s*(.+)$/;
 
 /** 任务块是否带「时间盒」（调研探针的持久标记，移入进行中后仍在）。 */
 function taskHasTimebox(doc, task) {
@@ -215,16 +220,161 @@ function activeWorkspaces(root) {
   return fs.readdirSync(dir).filter((n) => n !== 'done' && isDir(path.join(dir, n))).sort();
 }
 
-/** INBOX.md「待裁决」段内 `- [ ]` 条数。 */
-function inboxPendingCount(root) {
-  const text = read(path.join(root, 'INBOX.md'));
-  if (text === null) return 0;
-  let f = false; let n = 0;
-  for (const ln of text.split('\n')) {
-    if (/^## /.test(ln)) { if (f) break; f = /^## *待裁决/.test(ln); continue; }
-    if (f && /^- \[ \]/.test(ln)) n++;
+/** 标题相似（finish 软警告 / inbox 疑似共用）：包含或 token/bigram ≥60%。 */
+function normalizeTitle(s) {
+  return String(s)
+    .toLowerCase()
+    .replace(/[`"'「」《》【】]/g, '')
+    .replace(/^\s*\d{4}-\d{2}-\d{2}\s*/, '')
+    .replace(/[🔴⚪]/g, '')
+    .replace(/^-\s*(?:\[\s*\]\s*)?/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function similarTitles(a, b) {
+  const na = normalizeTitle(a);
+  const nb = normalizeTitle(b);
+  const shorter = na.length <= nb.length ? na : nb;
+  const longer = na.length <= nb.length ? nb : na;
+  if (shorter.length < 4) return false;
+  if (longer.includes(shorter)) return true;
+  const ta = na.split(' ').filter(Boolean);
+  const tb = nb.split(' ').filter(Boolean);
+  if (ta.length >= 2 && tb.length >= 2) {
+    const setA = new Set(ta);
+    let inter = 0;
+    for (const t of tb) if (setA.has(t)) inter++;
+    return inter / Math.min(ta.length, tb.length) >= 0.6;
   }
-  return n;
+  if (!/\s/.test(na) && !/\s/.test(nb)) {
+    const bigrams = (s) => {
+      const set = new Set();
+      for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+      return set;
+    };
+    const ba = bigrams(na);
+    const bb = bigrams(nb);
+    if (!ba.size || !bb.size) return false;
+    let inter = 0;
+    for (const x of ba) if (bb.has(x)) inter++;
+    return inter / Math.min(ba.size, bb.size) >= 0.6;
+  }
+  return false;
+}
+
+function parseFindings(root) {
+  const text = read(path.join(root, 'FINDINGS.md'));
+  if (text === null) return [];
+  const entries = [];
+  let cur = null;
+  const flush = () => { if (cur) entries.push(cur); cur = null; };
+  for (const ln of text.split('\n')) {
+    const m = ln.match(/^###\s+(F\d+)\s*[：:]\s*(.+)$/);
+    if (m) {
+      flush();
+      cur = { id: m[1], theme: m[2].trim(), date: '', tags: [], source: '', impact: '', status: '', material: '', trace: '', raw: [ln] };
+      continue;
+    }
+    if (!cur) continue;
+    if (/^#{2,3}\s/.test(ln)) { flush(); continue; }
+    cur.raw.push(ln);
+    const f = ln.match(/^-\s*([^：:]+)[：:]\s*(.*)$/);
+    if (!f) continue;
+    const key = f[1].replace(/\*/g, '').trim();
+    const val = f[2].trim();
+    if (key === '日期') cur.date = val;
+    else if (key === '标签') cur.tags = val.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+    else if (key === '来源') cur.source = val;
+    else if (key === '影响') cur.impact = val;
+    else if (key === '状态') cur.status = val;
+    else if (key === '材料') cur.material = val;
+    else if (key === '过程追溯') cur.trace = val;
+  }
+  flush();
+  return entries;
+}
+
+function findingsMatch(e, opts) {
+  if (opts.tag != null) {
+    if (opts.tag === '未分类') { if (e.tags.length) return false; }
+    else if (!e.tags.includes(opts.tag)) return false;
+  }
+  if (opts.source != null && !e.source.includes(opts.source)) return false;
+  if (opts.status != null) {
+    if (opts.status === '有效') { if (e.status !== '有效') return false; }
+    else if (opts.status === '推翻') { if (!e.status.includes('推翻')) return false; }
+    else if (e.status !== opts.status) return false;
+  }
+  if (opts.impact != null) {
+    if (opts.impact === 'none') { if (e.impact !== '无') return false; }
+    else if (opts.impact === 'spec') { if (!/SPEC/i.test(e.impact)) return false; }
+    else if (!e.impact.includes(opts.impact)) return false;
+  }
+  return true;
+}
+
+function inboxItemTitle(ln) {
+  let s = ln.replace(/^-\s*(?:\[\s*\]\s*)?/, '');
+  s = s.replace(/^\d{4}-\d{2}-\d{2}\s*/, '');
+  s = s.replace(/[🔴⚪]\s*/, '');
+  s = s.replace(/\s+[—–]\s+.*$/, '');
+  s = s.replace(/\s+→\s+.*$/, '');
+  return s.trim();
+}
+
+function parseInbox(root) {
+  const text = read(path.join(root, 'INBOX.md'));
+  if (text === null) return [];
+  const items = [];
+  let section = null;
+  let cur = null;
+  const flush = () => { if (cur) items.push(cur); cur = null; };
+  for (const ln of text.split('\n')) {
+    if (/^##\s/.test(ln)) {
+      flush();
+      if (/待裁决/.test(ln)) section = 'pending';
+      else if (/已裁决/.test(ln)) section = 'resolved';
+      else section = null;
+      continue;
+    }
+    if (!section) continue;
+    const solved = ln.match(/^-\s*已解决[：:]\s*(.+)$/);
+    if (solved && cur) {
+      cur.resolvedLine = solved[1].trim();
+      cur.resolved = true;
+      continue;
+    }
+    if (/^-\s/.test(ln)) {
+      flush();
+      cur = {
+        line: ln.trim(),
+        title: inboxItemTitle(ln),
+        section,
+        resolved: section === 'resolved',
+        resolvedLine: section === 'resolved' ? ln.trim() : '',
+      };
+    }
+  }
+  flush();
+  return items;
+}
+
+/** INBOX 未决条数：待裁决且无 `- 已解决`（旧「已裁决」区不算未决）。 */
+function inboxPendingCount(root) {
+  return parseInbox(root).filter((i) => i.section === 'pending' && !i.resolved).length;
+}
+
+function dodOf(doc, task) {
+  if (!doc || !task) return '';
+  const line = doc.lines.slice(task.start, task.end).find((l) => /^-\s*DoD\s*[:：]/.test(l)) || '';
+  return line.replace(/^-\s*DoD\s*[:：]\s*/, '').trim();
+}
+
+function completedTaskTitles(root) {
+  const doc = loadTasksDoc(root);
+  if (!doc) return [];
+  return tasksInSection(doc, '已完成').tasks.map((t) => normTitle(t.title));
 }
 
 /** TASKS.md「进行中」段原文行（含 `## 进行中` 标题行，去尾部空行），无则 null。 */
@@ -247,15 +397,9 @@ function inProgressRawSection(root) {
 
 /** 工作区 plan.md 的「当前位置」摘要行（前 3 条 `- ` 行）。 */
 function workspacePosition(root, name) {
-  const text = read(path.join(root, '.planning', name, 'plan.md'));
-  if (text === null) return [];
-  let f = false; const res = [];
-  for (const ln of text.split('\n')) {
-    if (/^## 当前位置/.test(ln)) { f = true; continue; }
-    if (f && /^- /.test(ln)) { res.push(ln); if (res.length >= 3) break; }
-  }
-  return res;
+  return positionFromDir(path.join(root, '.planning', name));
 }
+
 
 /** 工作区 plan.md 的「关联 TASKS 条目」字段值（仍是占位符则视为无），无则 null。 */
 function workspaceLinkedTask(root, name) {
@@ -294,76 +438,107 @@ const throttleOff = () => process.env.PLANNING_HOOKS_NO_THROTTLE === '1';
 
 // ── hook 子命令（输出文本与旧版 sh 脚本逐字一致） ─────────────
 
+function loadPlanView(root) {
+  const doc = loadTasksDoc(root);
+  const spec = specRedlines(root);
+  const view = {
+    root,
+    milestone: currentMilestone(root),
+    inProgress: [],
+    nextTitle: '',
+    nextDod: '',
+    readyCount: 0,
+    researchCount: 0,
+    donePendingCount: 0,
+    workspaces: activeWorkspaces(root),
+    inboxPending: inboxPendingCount(root),
+    redlines: [...spec.boundary.map((b) => `- 边界：${b}`), ...spec.tech.map((t) => `- 选型：${t}`)],
+  };
+  if (doc) {
+    const grab = (prefix) => tasksInSection(doc, prefix).tasks;
+    for (const t of grab('进行中')) {
+      view.inProgress.push({
+        title: normTitle(t.title),
+        dod: dodOf(doc, t),
+        start: taskField(doc, t, RE_START_DATE),
+        workspace: taskField(doc, t, RE_WORKSPACE),
+      });
+    }
+    const ready = grab('已拆好');
+    view.readyCount = ready.length;
+    if (ready[0]) {
+      view.nextTitle = normTitle(ready[0].title);
+      view.nextDod = dodOf(doc, ready[0]);
+    }
+    view.researchCount = grab('调研').length;
+    view.donePendingCount = grab('已完成').length;
+  }
+  return view;
+}
+
+function comparisonPayload(v) {
+  return `${v.inProgress.map((t) => t.title).join('\n')}\n${v.nextTitle}\n${v.inboxPending}`;
+}
+
+function emitStatusBody(v, withRedlines) {
+  if (withRedlines && v.redlines.length) {
+    out('[plan] SPEC 红线（执行期护栏，与其他文档冲突以 SPEC.md 为准）：');
+    const LIMIT = 3;
+    for (const l of v.redlines.slice(0, LIMIT)) out(l);
+    if (v.redlines.length > LIMIT) out('- （其余红线见 SPEC.md）');
+  }
+  if (v.milestone) out(`[plan] 当前里程碑：${v.milestone}`);
+  const ip = v.inProgress.map((t) => t.title).join('、') || '无';
+  out(`[plan] 进行中：${ip} ｜ 下一张：${v.nextTitle || '无'}`);
+  out(`[plan] 提示：进行中 ${v.inProgress.length} 个，INBOX 待裁决 ${v.inboxPending} 条`);
+}
+
+function emitHeartbeat(v) {
+  if (v.inProgress.length) {
+    const first = v.inProgress[0].title;
+    out(`[plan] 进行中：${first}（${v.inProgress.length}）｜详情 plan.mjs task "${first}"`);
+    return;
+  }
+  if (v.nextTitle) {
+    out(`[plan] 下一张：${v.nextTitle}｜详情 plan.mjs next`);
+    return;
+  }
+  out('[plan] 进行中：无｜详情 plan.mjs status');
+}
+
+function emitChangeCard(v) {
+  emitStatusBody(v, false);
+  if (v.nextTitle) {
+    out(`下一张：${v.nextTitle}`);
+    out(`DoD：${v.nextDod || '（无）'}`);
+  }
+  emitHeartbeat(v);
+}
+
+
 function hookSessionStart(root) {
   if (!isFile(path.join(root, 'ROADMAP.md')) && !isFile(path.join(root, 'TASKS.md'))
     && !isFile(path.join(root, 'INBOX.md')) && !isDir(path.join(root, '.planning'))) return 0;
-
-  // SPEC 红线：执行期护栏，防「隐式漂移」（做着做着违背边界 / 技术选型）。每会话注入一次，带行数上限防膨胀刷屏。
-  const spec = specRedlines(root);
-  const redlines = [...spec.boundary.map((b) => `- 边界：${b}`), ...spec.tech.map((t) => `- 选型：${t}`)];
-  if (redlines.length) {
-    out('[plan] SPEC 红线（执行期护栏，与其他文档冲突以 SPEC.md 为准）：');
-    const LIMIT = 12;
-    for (const l of redlines.slice(0, LIMIT)) out(l);
-    if (redlines.length > LIMIT) out('- （SPEC 红线过长已截断，完整边界见 SPEC.md）');
-  }
-
-  const milestone = currentMilestone(root);
-  if (milestone) out(`[plan] 当前里程碑：${milestone}`);
-
-  const doc = loadTasksDoc(root);
-  let taskCount = 0;
-  if (doc) {
-    const { tasks } = tasksInSection(doc, '进行中');
-    taskCount = tasks.length;
-    if (tasks.length) {
-      out('[plan] 进行中任务：');
-      for (const t of tasks) out(`- ${normTitle(t.title)}`);
-    }
-  }
-
-  for (const name of activeWorkspaces(root)) {
-    out(`[plan] 活跃工作区：.planning/${name}（开工前先读 plan.md 的「当前位置」）`);
-  }
-
-  out(`[plan] 提示：进行中任务 ${taskCount} 个，INBOX 待裁决 ${inboxPendingCount(root)} 条`);
+  emitStatusBody(loadPlanView(root), true);
   return 0;
 }
+
 
 function hookUserPromptSubmit(root) {
   if (!isFile(path.join(root, 'ROADMAP.md')) && !isFile(path.join(root, 'TASKS.md'))
     && !isDir(path.join(root, '.planning'))) return 0;
-
-  const milestone = currentMilestone(root);
-  const section = inProgressRawSection(root);
-  const wsNames = activeWorkspaces(root);
-
-  // 节流：注入内容没变 → 只发一行摘要
-  const payload = `${milestone || ''}\n${section ? section.join('\n') : ''}\n${wsNames.join(' ')}`;
-  const hash = sha1(payload);
+  const v = loadPlanView(root);
+  const hash = sha1(comparisonPayload(v));
   const cache = loadCache(root);
-  if (!throttleOff() && cache.ups && cache.ups.hash === hash) {
-    const n = section ? section.filter((l) => /^### /.test(l)).length : 0;
-    out(`[plan] 计划状态无变化（进行中任务 ${n} 个）`);
-    return 0;
-  }
-
-  if (milestone) out(`[plan] 当前里程碑：${milestone}`);
-  if (section && section.some((l) => /^### /.test(l))) {
-    out('[plan] 进行中任务（TASKS.md 原文）：');
-    if (section.length > 60) {
-      for (const l of section.slice(0, 60)) out(l);
-      out('[plan] 进行中段过长已截断，详见 TASKS.md');
-    } else {
-      for (const l of section) out(l);
-    }
-  }
-  if (wsNames.length) out(`[plan] 活跃工作区： ${wsNames.join(' ')}（开工前先读 plan.md 的「当前位置」）`);
-
+  const unchanged = cache.ups && cache.ups.hash === hash;
+  if (throttleOff() || !cache.ups || unchanged) emitHeartbeat(v);
+  else emitChangeCard(v);
   cache.ups = { hash };
   saveCache(root, cache);
   return 0;
 }
+
+
 
 function hookPreToolUse(root) {
   const lines = [];
@@ -506,45 +681,385 @@ const HOOKS = {
 // ── status 子命令 ─────────────────────────────────────────────
 
 function cmdStatus(root, asJson) {
+  const v = loadPlanView(root);
+  if (asJson) {
+    out(JSON.stringify({
+      root: v.root,
+      milestone: v.milestone,
+      inProgress: v.inProgress,
+      readyCount: v.readyCount,
+      researchCount: v.researchCount,
+      donePendingCount: v.donePendingCount,
+      workspaces: v.workspaces,
+      inboxPending: v.inboxPending,
+    }, null, 2));
+    return 0;
+  }
+  emitStatusBody(v, true);
+  return 0;
+}
+
+
+function cmdNext(root) {
   const doc = loadTasksDoc(root);
-  const state = {
-    root,
-    milestone: currentMilestone(root),
-    inProgress: [],
-    readyCount: 0,
-    researchCount: 0,
-    donePendingCount: 0,
-    workspaces: activeWorkspaces(root),
-    inboxPending: inboxPendingCount(root),
-  };
-  if (doc) {
-    const grab = (prefix) => tasksInSection(doc, prefix).tasks;
-    for (const t of grab('进行中')) {
-      const dodLine = doc.lines.slice(t.start, t.end).find((l) => /^-\s*DoD\s*[:：]/.test(l)) || '';
-      state.inProgress.push({
-        title: normTitle(t.title),
-        dod: dodLine.replace(/^-\s*DoD\s*[:：]\s*/, ''),
-        start: taskField(doc, t, RE_START_DATE),
-        workspace: taskField(doc, t, RE_WORKSPACE),
-      });
+  const ready = doc ? tasksInSection(doc, '已拆好').tasks : [];
+  if (!ready.length) { out('（无匹配）'); return 0; }
+  const t = ready[0];
+  out(`下一张：${normTitle(t.title)}`);
+  out(`DoD：${dodOf(doc, t) || '（无）'}`);
+  return 0;
+}
+
+function findingIndexLine(e) {
+  const tag = e.tags.length ? e.tags.join(',') : '未分类';
+  const theme = e.theme.length > 40 ? e.theme.slice(0, 40) : e.theme;
+  return `${e.id} | ${e.date || '—'} | ${tag} | ${e.status || '—'} | ${theme}`;
+}
+
+function cmdFindings(root, opts) {
+  if (opts.full && !opts.fullId) {
+    out('[plan] 缺少编号：plan.mjs findings --full F3');
+    return 3;
+  }
+  const entries = parseFindings(root);
+  if (opts.full) {
+    const want = String(opts.fullId).replace(/^F/i, '');
+    const hit = entries.find((e) => e.id.replace(/^F/i, '') === want || e.id === opts.fullId);
+    if (!hit) { out(`[plan] 未找到 ${/^\d+$/.test(String(opts.fullId)) ? 'F' + opts.fullId : opts.fullId}`); return 2; }
+    out(...hit.raw);
+    return 0;
+  }
+  const filtered = entries.filter((e) => findingsMatch(e, opts));
+  if (!filtered.length) { out('（无匹配）'); return 0; }
+  for (const e of filtered) out(findingIndexLine(e));
+  return 0;
+}
+
+
+function cmdInbox(root, opts) {
+  const items = parseInbox(root);
+  const pending = items.filter((i) => i.section === 'pending' && !i.resolved);
+  const resolved = items.filter((i) => i.resolved);
+  const doneTitles = completedTaskTitles(root);
+
+  const printPending = () => {
+    if (!pending.length) { out('（无匹配）'); return; }
+    const doc = loadTasksDoc(root);
+    const open = allTasks(doc).filter((t) => t.zone !== '已完成' && !/✅/.test(t.title));
+    for (const i of pending) {
+      let claim = '';
+      for (const t of open) {
+        const q = inboxQuery(taskField(doc, t, RE_FROM));
+        if (q && (i.title === q || similarTitles(i.title, q))) { claim = normTitle(t.title); break; }
+      }
+      out(claim ? `${i.line}  认领中：${claim}` : i.line);
     }
-    state.readyCount = grab('已拆好').length;
-    state.researchCount = grab('调研').length;
-    state.donePendingCount = grab('已完成').length;
+  };
+
+  const printResolved = () => {
+    if (!resolved.length) out('（无匹配）');
+    else {
+      for (const i of resolved) {
+        if (i.section === 'pending') out(`${i.line} → ${i.resolvedLine}`);
+        else out(i.line);
+      }
+    }
+  };
+  const printSuspect = () => {
+    const hits = [];
+    for (const i of pending) {
+      for (const t of doneTitles) {
+        if (similarTitles(i.title, t)) { hits.push({ i, t }); break; }
+      }
+    }
+    if (!hits.length) return;
+    out('⚠️ 疑似已实现：');
+    for (const h of hits) out(`- ${h.i.title} ≈ 已完成「${h.t}」`);
+  };
+
+  if (opts.all) {
+    out('## 未决');
+    printPending();
+    out('## 已解决');
+    printResolved();
+    return 0;
   }
-  if (asJson) { out(JSON.stringify(state, null, 2)); return 0; }
-  if (state.milestone) out(`当前里程碑：${state.milestone}`);
-  out(`进行中 ${state.inProgress.length} ｜ 已拆好 ${state.readyCount} ｜ 调研 ${state.researchCount} ｜ 已完成待归档 ${state.donePendingCount} ｜ INBOX 待裁决 ${state.inboxPending}`);
-  for (const t of state.inProgress) {
-    out(`- ${t.title}${t.start ? `（开始：${t.start}）` : ''}${t.workspace ? `［${t.workspace}］` : ''}`);
-    if (t.dod) out(`  DoD：${t.dod}`);
+  if (opts.resolved) {
+    printResolved();
+    return 0;
   }
-  for (const name of state.workspaces) {
-    const pos = workspacePosition(root, name);
-    out(`工作区 .planning/${name}${pos.length ? `：${pos[0].replace(/^- /, '')}` : ''}`);
+  printPending();
+  printSuspect();
+  return 0;
+}
+
+function unknownFlag(opts) {
+  if (!opts.unknownFlag) return 0;
+  out(`[plan] 未知参数：${opts.unknownFlag}`);
+  return 3;
+}
+
+function allTasks(doc) {
+  if (!doc) return [];
+  const acc = [];
+  for (const prefix of ['进行中', '已拆好', '调研', '已完成']) {
+    for (const t of tasksInSection(doc, prefix).tasks) acc.push({ ...t, zone: prefix });
+  }
+  return acc;
+}
+
+function parseFids(s) {
+  return [...String(s || '').matchAll(/F\d+/gi)].map((m) => m[0].replace(/^f/i, 'F'));
+}
+
+function inboxQuery(s) {
+  return String(s || '').replace(/^INBOX\s+/i, '').trim();
+}
+
+function repoPathOk(root, p) {
+  if (!p) return true;
+  const rel = p.replace(/^[`"'<\s]+|[`"'>\s]+$/g, '').split(/\s/)[0];
+  if (!rel || rel.startsWith('<')) return true;
+  const abs = path.isAbsolute(rel) ? rel : path.join(root, rel);
+  return isFile(abs) || isDir(abs);
+}
+
+function resolveWsDir(root, slug) {
+  if (!slug) return null;
+  const n = slug.replace(/\\/g, '/').replace(/\/$/, '');
+  const cands = [
+    path.join(root, n),
+    path.join(root, '.planning', n),
+    path.join(root, '.planning', 'done', n),
+    path.join(root, '.planning', path.basename(n)),
+    path.join(root, '.planning', 'done', path.basename(n)),
+  ];
+  for (const d of cands) {
+    if (isFile(path.join(d, 'plan.md')) || isDir(d)) return d;
+  }
+  return null;
+}
+
+function positionFromDir(wsAbs) {
+  const text = read(path.join(wsAbs, 'plan.md'));
+  if (text === null) return [];
+  let f = false; const res = [];
+  for (const ln of text.split('\n')) {
+    if (/^## 当前位置/.test(ln)) { f = true; continue; }
+    if (f && /^- /.test(ln)) { res.push(ln); if (res.length >= 3) break; }
+  }
+  return res;
+}
+
+function findingsForWorkspace(root, slugName, wsRel) {
+  return parseFindings(root).filter((e) => {
+    const blob = `${e.trace}\n${e.raw.join('\n')}`;
+    if (!blob.includes('过程追溯')) return false;
+    if (slugName && blob.includes(slugName)) return true;
+    if (wsRel && blob.includes(wsRel.replace(/\\/g, '/'))) return true;
+    return false;
+  });
+}
+
+function lookupTasks(doc, name) {
+  return allTasks(doc).filter((t) => normTitle(t.title) === normTitle(name));
+}
+
+function cmdTask(root, name, opts) {
+  const doc = loadTasksDoc(root);
+  const hits = lookupTasks(doc, name);
+  if (!hits.length) { out(`[plan] 未找到任务：${name}`); return 2; }
+  if (hits.length > 1) {
+    out(`[plan] 任务名歧义：${name}`);
+    for (const t of hits) out(`- ${t.zone} ｜ ${normTitle(t.title)}`);
+    return 2;
+  }
+  const t = hits[0];
+  const fields = [
+    ['DoD', dodOf(doc, t)],
+    ['前置', taskField(doc, t, RE_PRE)],
+    ['工作区', taskField(doc, t, RE_WORKSPACE)],
+    ['标签', taskField(doc, t, RE_TAG)],
+    ['依据', taskField(doc, t, RE_BASIS)],
+    ['来自', taskField(doc, t, RE_FROM)],
+    ['结论', taskField(doc, t, RE_CONC)],
+  ];
+  out(`### ${normTitle(t.title)}`);
+  for (const [k, v] of fields) {
+    if (v) out(`- ${k}：${v}`);
+  }
+  const fids = [...parseFids(taskField(doc, t, RE_BASIS)), ...parseFids(taskField(doc, t, RE_CONC))];
+  const findings = parseFindings(root).filter((e) => fids.includes(e.id));
+  const fromQ = inboxQuery(taskField(doc, t, RE_FROM));
+  const inboxHits = parseInbox(root).filter((i) => {
+    if (fromQ && (i.title === fromQ || similarTitles(i.title, fromQ))) return true;
+    if (i.resolved && i.resolvedLine && i.resolvedLine.includes(normTitle(t.title))) return true;
+    return false;
+  });
+  out('关联：');
+  if (findings.length) for (const e of findings) out(`- ${findingIndexLine(e)}`);
+  else out('- 结论：无');
+  if (inboxHits.length) for (const i of inboxHits) out(`- INBOX ${i.title}${i.resolved ? ` → ${i.resolvedLine || '已解决'}` : ''}`);
+  else out('- INBOX：无');
+  if (opts.full) {
+    for (const e of findings) {
+      out(`--- ${e.id} ---`);
+      out(...e.raw);
+    }
+    for (const i of inboxHits) {
+      out('--- INBOX ---');
+      out(i.line);
+      if (i.resolvedLine) out(`- 已解决：${i.resolvedLine}`);
+    }
   }
   return 0;
 }
+
+function cmdWs(root, slug, opts) {
+  if (opts.full && !slug) {
+    out('[plan] 缺少工作区：plan.mjs ws <slug> --full');
+    return 3;
+  }
+  if (!slug) {
+    const names = activeWorkspaces(root);
+    if (!names.length) { out('（无匹配）'); return 0; }
+    for (const name of names) {
+      const pos = workspacePosition(root, name);
+      out(`.planning/${name}${pos[0] ? ` ｜ ${pos[0].replace(/^- /, '')}` : ''}`);
+    }
+    return 0;
+  }
+  const wsAbs = resolveWsDir(root, slug);
+  if (!wsAbs) { out(`[plan] 未找到工作区：${slug}`); return 2; }
+  const rel = path.relative(root, wsAbs).replace(/\\/g, '/');
+  if (opts.full) {
+    const text = read(path.join(wsAbs, 'progress.md'));
+    if (text === null) { out(`[plan] 未找到 ${rel}/progress.md`); return 2; }
+    out(text.replace(/\n$/, ''));
+    return 0;
+  }
+  const pos = positionFromDir(wsAbs);
+  if (pos.length) out(...pos);
+  else out('（无当前位置）');
+  const slugName = path.basename(wsAbs);
+  const produced = findingsForWorkspace(root, slugName, rel);
+  if (produced.length) for (const e of produced) out(findingIndexLine(e));
+  return 0;
+}
+
+function cmdLinks(root, opts) {
+  const doc = loadTasksDoc(root);
+  const tasks = allTasks(doc);
+  const findings = parseFindings(root);
+  const inbox = parseInbox(root);
+  const fidSet = new Set(findings.map((e) => e.id));
+  const titleSet = new Set(tasks.map((t) => normTitle(t.title)));
+  const doneSet = new Set(tasks.filter((t) => t.zone === '已完成' || /✅/.test(t.title)).map((t) => normTitle(t.title)));
+
+  const edges = [];
+  const orphans = [];
+  const linked = new Set();
+
+  for (const t of tasks) {
+    const title = normTitle(t.title);
+    const conc = taskField(doc, t, RE_CONC);
+    const basis = taskField(doc, t, RE_BASIS);
+    const from = taskField(doc, t, RE_FROM);
+    const pre = taskField(doc, t, RE_PRE);
+    const ws = taskField(doc, t, RE_WORKSPACE);
+    const fOut = parseFids(conc);
+    const fIn = parseFids(basis);
+    if (fOut.length || fIn.length || from || pre) linked.add(title);
+    if (fOut.length) edges.push(`T ${title} → ${fOut.join(',')}`);
+    if (from) {
+      const q = inboxQuery(from);
+      const solved = inbox.filter((i) => i.resolved && (i.title === q || similarTitles(i.title, q)));
+      if (solved.length) edges.push(`T ${title} ｜ 解决 INBOX ${q}`);
+      else if (t.zone !== '已完成') edges.push(`INBOX ${q} → 认领中 ${title}`);
+      linked.add(title);
+    }
+    if (pre) edges.push(`T ${title} → 前置 ${pre}`);
+
+    const done = t.zone === '已完成' || /✅/.test(t.title);
+    if (done && ws && !conc) orphans.push(`⚠️ 有工作区的已完成任务缺「结论」行：${title}`);
+    for (const id of [...fOut, ...fIn]) {
+      if (!fidSet.has(id)) orphans.push(`⚠️ 引用不存在的 ${id}（任务 ${title}）`);
+    }
+    if (from) {
+      const q = inboxQuery(from);
+      if (!inbox.some((i) => i.title === q || similarTitles(i.title, q) || i.line.includes(q))) {
+        orphans.push(`⚠️ 来自 INBOX 不存在：${q}（任务 ${title}）`);
+      }
+    }
+  }
+
+  for (const e of findings) {
+    const spawned = tasks.filter((t) => parseFids(taskField(doc, t, RE_BASIS)).includes(e.id));
+    if (spawned.length) edges.push(`F ${e.id} → 催生任务 ${spawned.map((t) => normTitle(t.title)).join(',')}`);
+    for (const p of [e.material, e.trace]) {
+      if (p && !repoPathOk(root, p)) orphans.push(`⚠️ 路径打不开：${p}（${e.id}）`);
+    }
+    if (/调研探针|开发中发现/.test(e.source)) {
+      const claimed = tasks.some((t) => parseFids(`${taskField(doc, t, RE_CONC) || ''} ${taskField(doc, t, RE_BASIS) || ''}`).includes(e.id));
+      const hasWs = /[.]planning/.test(`${e.material} ${e.trace}`);
+      if (!claimed && !hasWs) orphans.push(`⚠️ ${e.id} 来源=${e.source} 且无工作区/任务关联`);
+    }
+  }
+
+  for (const i of inbox) {
+    if (!i.resolved || i.section !== 'pending') continue;
+    const m = String(i.resolvedLine).match(/^([^✅（(]+)/);
+    const tn = m ? m[1].trim() : '';
+    if (tn && !doneSet.has(normTitle(tn)) && !titleSet.has(normTitle(tn))) {
+      orphans.push(`⚠️ 已解决指向不存在的任务：${tn}`);
+    } else if (tn && !doneSet.has(normTitle(tn))) {
+      orphans.push(`⚠️ 已解决指向未完成任务：${tn}`);
+    } else if (tn) linked.add(normTitle(tn));
+  }
+
+  if (opts.orphan) {
+    if (!orphans.length) out('（无匹配）');
+    else out(...orphans);
+    return 0;
+  }
+  if (opts.unlinked) {
+    const u = tasks.map((t) => normTitle(t.title)).filter((n) => !linked.has(n));
+    if (!u.length) out('（无匹配）');
+    else for (const n of u) out(`T ${n}`);
+    return 0;
+  }
+  if (!edges.length) out('（无匹配）');
+  else out(...edges);
+  out(`统计：边 ${edges.length} ｜ 任务 ${tasks.length} ｜ 结论 ${findings.length} ｜ INBOX ${inbox.length} ｜ ⚠️ ${orphans.length}`);
+  return 0;
+}
+
+function upsertDocField(doc, task, key, value) {
+  const re = new RegExp(`^-\\s*\\**${key}\\**\\s*[:：]`);
+  const line = `- ${key}：${value}`;
+  for (let i = task.start + 1; i < task.end; i++) {
+    if (re.test(doc.lines[i])) { doc.lines[i] = line; return; }
+  }
+  const tail = findBlockTail(doc, task);
+  doc.lines.splice(tail, 0, line);
+  task.end++;
+}
+
+function writeInboxResolved(root, items, taskName, date) {
+  const file = path.join(root, 'INBOX.md');
+  const text = read(file);
+  if (text === null || !items.length) return;
+  const want = new Set(items.map((i) => i.line));
+  const done = `- 已解决：${taskName} ✅（${date}）`;
+  const lines = text.split('\n');
+  const next = [];
+  for (let i = 0; i < lines.length; i++) {
+    next.push(lines[i]);
+    if (want.has(lines[i].trim()) && !/^-\s*已解决/.test(lines[i + 1] || '')) next.push(done);
+  }
+  fs.writeFileSync(file, next.join('\n'));
+}
+
 
 // ── start 子命令 ──────────────────────────────────────────────
 
@@ -649,6 +1164,12 @@ function cmdStart(root, name, opts) {
       out(`[plan] TASKS.md 已补关联行：工作区：${slugDir}/`);
     }
   }
+  // 存量提醒：认领新任务时「进行中」还有其他任务 → 提示先收尾或显式暂停（提醒非阻断）
+  const others = tasksInSection(doc, '进行中').tasks.filter((t) => normTitle(t.title) !== normTitle(name));
+  if (others.length) {
+    out(`[plan] 提醒：「进行中」还有 ${others.length} 个任务未收尾：`);
+    for (const t of others) out(`[plan] - ${normTitle(t.title)}（已做完请先走完成流程并 finish；暂停请移回「已拆好（待做）」）`);
+  }
   out('[plan] 开工前先读 plan.md / TASKS.md 对应条目；执行中遵守 2-Action 落盘纪律。');
   return 0;
 }
@@ -691,6 +1212,31 @@ function cmdFinish(root, name, opts) {
     }
   }
 
+  const slugName = wsRel ? path.basename(wsRel) : '';
+  const concIds = findingsForWorkspace(root, slugName, wsRel).map((e) => e.id);
+  if (concIds.length) upsertDocField(doc, task, '结论', concIds.join(','));
+
+  const pending = parseInbox(root).filter((i) => i.section === 'pending' && !i.resolved);
+  const resolveTargets = [];
+  const warnLines = [];
+  const addResolve = (q) => {
+    if (!q) return;
+    const qn = inboxQuery(q);
+    const hit = pending.find((i) => i.title === qn || similarTitles(i.title, qn) || i.line.includes(qn));
+    if (hit) resolveTargets.push(hit);
+    else warnLines.push(`[plan] 警告：未匹配未决 INBOX「${qn}」`);
+  };
+  const fromVal = taskField(doc, task, RE_FROM);
+  if (fromVal) addResolve(fromVal);
+  if (opts.resolve) addResolve(opts.resolve);
+  if (!fromVal && !opts.resolve) {
+    for (const i of pending) {
+      if (similarTitles(i.title, name)) {
+        warnLines.push(`[plan] 警告：未决 INBOX「${i.title}」与本任务标题相似，未写已解决（补 --resolve 或任务块 - 来自：）`);
+      }
+    }
+  }
+
   // 机械动作：移入已完成段 + ✅ + 完成日期
   const block = removeBlock(doc, task);
   block[0] = block[0].includes('✅') ? block[0] : `${block[0]} ✅`;
@@ -698,6 +1244,12 @@ function cmdFinish(root, name, opts) {
   insertBlock(doc, '已完成', block);
   saveTasksDoc(doc);
   out(`[plan] 已完成：✅ ${normTitle(task.title)}（完成：${date}）→「已完成（待归档）」`);
+  if (concIds.length) out(`[plan] 已回写结论：${concIds.join(',')}`);
+  if (resolveTargets.length) {
+    writeInboxResolved(root, resolveTargets, normTitle(task.title), date);
+    out(`[plan] 已写 INBOX 已解决：${resolveTargets.map((i) => i.title).join('、')}`);
+  }
+  for (const w of warnLines) out(w);
 
   // 机械动作：工作区移入 done/（归档后只读）
   if (wsRel) {
@@ -714,8 +1266,36 @@ function cmdFinish(root, name, opts) {
     }
   }
   out('[plan] 提醒：归档到 ROADMAP 里程碑由 plan-review 负责；本任务不许删除。');
+  cmdReindex(root, true);
+  out('[plan] 已再生 FINDINGS 索引');
   return 0;
 }
+
+const INDEX_BEGIN = '<!-- plan-index:begin | 引擎维护：finish / reindex 时从正文重新生成，手改会被覆盖 -->';
+const INDEX_END = '<!-- plan-index:end -->';
+
+function cmdReindex(root, quiet) {
+  const file = path.join(root, 'FINDINGS.md');
+  const text = read(file);
+  if (text === null) {
+    if (!quiet) out('[plan] 未找到 FINDINGS.md');
+    return quiet ? 0 : 1;
+  }
+  const entries = parseFindings(root);
+  const block = [INDEX_BEGIN, ...entries.map((e) => `- ${findingIndexLine(e)}`), INDEX_END].join('\n');
+  const re = /<!--\s*plan-index:begin[\s\S]*?<!--\s*plan-index:end\s*-->/;
+  let next;
+  if (re.test(text)) next = text.replace(re, block);
+  else if (/^##\s*索引/m.test(text)) {
+    next = text.replace(/^(##\s*索引[^\n]*\n)/m, `$1\n${block}\n`);
+  } else {
+    next = `${text.replace(/\s*$/, '')}\n\n## 索引\n\n${block}\n`;
+  }
+  fs.writeFileSync(file, next);
+  if (!quiet) out(`[plan] 已再生 FINDINGS 索引（${entries.length} 条）`);
+  return 0;
+}
+
 
 // ── doctor 子命令（1:1 移植 plan-doctor.sh 输出行 + 新增 node 检查） ──
 
@@ -844,7 +1424,26 @@ function cmdDoctor(globalOnly) {
     const missingSf = ['SPEC.md', 'ROADMAP.md', 'TASKS.md', 'INBOX.md', 'FINDINGS.md'].filter((f) => !isFile(path.join(cwd, f)));
     if (!missingSf.length) pass('状态文件: 当前目录已初始化计划体系（5 文件齐全）');
     else warn(`状态文件: 当前目录缺少:${missingSf.map((f) => ` ${f}`).join('')}（尚未运行 plan-init；hooks 会静默跳过，属预期）`);
+    const findingsPath = path.join(cwd, 'FINDINGS.md');
+    if (isFile(findingsPath)) {
+      const ft = read(findingsPath) || '';
+      if (!/plan-index:begin/.test(ft) || !/<!--\s*plan-index:end/.test(ft)) {
+        warn('FINDINGS 索引: 缺 plan-index 受管标记（跑 plan.mjs reindex；旧项目属预期）');
+      } else pass('FINDINGS 索引: 受管标记存在');
+      const badH = ft.split('\n').filter((l) => /^###\s+/.test(l) && !/^###\s+F\d+/.test(l) && !/^###\s+F</.test(l));
+      if (badH.length) warn(`FINDINGS 解析: ${badH.length} 个无法按 F 编号解析的标题`);
+    }
+    const inboxPath = path.join(cwd, 'INBOX.md');
+    if (isFile(inboxPath)) {
+      let sec = null; let badI = 0;
+      for (const ln of (read(inboxPath) || '').split('\n')) {
+        if (/^##\s/.test(ln)) { sec = /待裁决/.test(ln) ? 'p' : null; continue; }
+        if (sec === 'p' && /^-\s/.test(ln) && !/^-\s*\[/.test(ln) && !/^-\s*已解决/.test(ln) && !/^-\s*</.test(ln)) badI++;
+      }
+      if (badI) warn(`INBOX 解析: ${badI} 条待裁决行无法识别`);
+    }
   }
+
 
   // 7. node 运行时（新增：引擎与所有 hook 薄壳依赖 node）
   pass(`node 运行时: ${process.version}（${process.execPath}）`);
@@ -858,13 +1457,33 @@ function cmdDoctor(globalOnly) {
 
 function parseArgs(args) {
   const opts = { positional: [] };
+  const take = (i, a, key) => {
+    const pfx = `--${key}=`;
+    if (a.startsWith(pfx)) { opts[key] = a.slice(pfx.length); return i; }
+    opts[key] = args[i + 1];
+    return i + 1;
+  };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--workspace') opts.workspace = true;
     else if (a === '--json') opts.json = true;
     else if (a === '--global') opts.global = true;
-    else if (a === '--date') opts.date = args[++i];
-    else if (a.startsWith('--date=')) opts.date = a.slice(7);
+    else if (a === '--resolved') opts.resolved = true;
+    else if (a === '--all') opts.all = true;
+    else if (a === '--unlinked') opts.unlinked = true;
+    else if (a === '--orphan') opts.orphan = true;
+    else if (a === '--full' || a.startsWith('--full=')) {
+      opts.full = true;
+      if (a.startsWith('--full=')) opts.fullId = a.slice(7);
+      else if (args[i + 1] && !args[i + 1].startsWith('-')) opts.fullId = args[++i];
+    }
+    else if (a === '--date' || a.startsWith('--date=')) i = take(i, a, 'date');
+    else if (a === '--resolve' || a.startsWith('--resolve=')) i = take(i, a, 'resolve');
+    else if (a === '--tag' || a.startsWith('--tag=')) i = take(i, a, 'tag');
+    else if (a === '--source' || a.startsWith('--source=')) i = take(i, a, 'source');
+    else if (a === '--status' || a.startsWith('--status=')) i = take(i, a, 'status');
+    else if (a === '--impact' || a.startsWith('--impact=')) i = take(i, a, 'impact');
+    else if (a.startsWith('--')) opts.unknownFlag = a;
     else opts.positional.push(a);
   }
   return opts;
@@ -876,13 +1495,25 @@ function usage() {
     '',
     '  hook <name>                 运行 hook 逻辑（session-start / user-prompt-submit / pre-tool-use /',
     '                              post-tool-use / pre-compact / permission-request / stop-gate）',
-    '  status [--json]             输出当前计划状态摘要',
-    '  start "<任务名>" [--workspace] [--date YYYY-MM-DD]   认领任务（移入进行中 + 补开始日期，可建工作区）',
-    '  finish "<任务名>" [--date YYYY-MM-DD]                完成任务（校验三合一 → ✅ + 移入已完成 + 归档工作区）',
+    '  status [--json]             底线：红线 + 里程碑 + 进行中一行 + 下一张 + INBOX 计数',
+    '  next                        队首待做：标题 + DoD',
+    '  task "<名>" [--full]        任务卡片 + 关联区',
+    '  findings [--tag|--source|--status|--impact] [--full F3]  结论索引或单条全文',
+    '  inbox [--resolved|--all]    未决索引 + 疑似已实现',
+    '  ws [slug] [--full]          当前位置三行 / progress 全文',
+    '  links [--unlinked|--orphan] 关联边 / 数据毛病',
+    '  start "<任务名>" [--workspace] [--date YYYY-MM-DD]   认领任务',
+    '  finish "<任务名>" [--resolve "<INBOX>"] [--date YYYY-MM-DD]  完成任务',
+    '  reindex                     再生 FINDINGS 受管索引区',
     '  doctor [--global]           安装自检（PASS / WARN / FAIL）',
     '',
     '环境变量：PLANNING_ROOT（项目根）、PLANNING_HOOKS_DISABLED=1（hook 静默）、PLANNING_HOOKS_NO_THROTTLE=1（关节流）',
   );
+}
+
+function noRoot() {
+  out('[plan] 未找到计划体系（ROADMAP.md / TASKS.md / .planning 均不存在），请先运行 plan-init');
+  return 1;
 }
 
 function main() {
@@ -896,20 +1527,43 @@ function main() {
     const fn = HOOKS[name];
     if (!fn) { process.stderr.write(`[plan] 未知 hook：${name}\n`); return 1; }
     const root = findRoot();
-    if (!root) return 0; // 无计划体系 → 静默
+    if (!root) return 0;
     return fn(root) || 0;
   }
-  if (cmd === 'status') {
+
+  const queries = new Set(['status', 'next', 'findings', 'inbox', 'task', 'ws', 'links']);
+  if (queries.has(cmd)) {
+    const bad = unknownFlag(opts);
+    if (bad) return bad;
     const root = findRoot();
-    if (!root) { out('[plan] 未找到计划体系（ROADMAP.md / TASKS.md / .planning 均不存在），请先运行 plan-init'); return 1; }
-    return cmdStatus(root, !!opts.json);
+    if (!root) return noRoot();
+    if (cmd === 'status') return cmdStatus(root, !!opts.json);
+    if (cmd === 'next') return cmdNext(root);
+    if (cmd === 'findings') return cmdFindings(root, opts);
+    if (cmd === 'inbox') return cmdInbox(root, opts);
+    if (cmd === 'task') {
+      const name = opts.positional[0];
+      if (!name) { out('[plan] 缺少任务名：plan.mjs task "<任务名>"'); return 3; }
+      return cmdTask(root, name, opts);
+    }
+    if (cmd === 'ws') return cmdWs(root, opts.positional[0], opts);
+    if (opts.unlinked && opts.orphan) { out('[plan] 未知参数：--unlinked 与 --orphan 不能同时用'); return 3; }
+    return cmdLinks(root, opts);
   }
+
+
   if (cmd === 'start' || cmd === 'finish') {
     const name = opts.positional[0];
     if (!name) { out(`[plan] 缺少任务名：plan.mjs ${cmd} "<任务名>"`); return 1; }
     const root = findRoot();
-    if (!root) { out('[plan] 未找到计划体系（ROADMAP.md / TASKS.md / .planning 均不存在），请先运行 plan-init'); return 1; }
+    if (!root) return noRoot();
     return cmd === 'start' ? cmdStart(root, name, opts) : cmdFinish(root, name, opts);
+  }
+
+  if (cmd === 'reindex') {
+    const root = findRoot();
+    if (!root) return noRoot();
+    return cmdReindex(root, false);
   }
   usage();
   return cmd ? 1 : 0;
