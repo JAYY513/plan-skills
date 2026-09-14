@@ -29,7 +29,7 @@
 
 ## 索引
 
-<!-- plan-index:begin | 引擎维护：finish / reindex 时从正文重新生成，手改会被覆盖 -->
+<!-- plan-index:begin | 引擎维护：finish / reindex / finding-add 时从正文重新生成，手改会被覆盖 -->
 <!-- plan-index:end -->
 
 

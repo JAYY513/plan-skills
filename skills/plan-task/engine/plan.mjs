@@ -1271,7 +1271,7 @@ function cmdFinish(root, name, opts) {
   return 0;
 }
 
-const INDEX_BEGIN = '<!-- plan-index:begin | 引擎维护：finish / reindex 时从正文重新生成，手改会被覆盖 -->';
+const INDEX_BEGIN = '<!-- plan-index:begin | 引擎维护：finish / reindex / finding-add 时从正文重新生成，手改会被覆盖 -->';
 const INDEX_END = '<!-- plan-index:end -->';
 
 function cmdReindex(root, quiet) {
@@ -1298,6 +1298,430 @@ function cmdReindex(root, quiet) {
 
 
 // ── doctor 子命令（1:1 移植 plan-doctor.sh 输出行 + 新增 node 检查） ──
+
+// ── 追加写入族（task-add / finding-add / inbox-add / progress-log）──
+// 定位：只做「追加一条」的搬砖。判断（标题 / DoD / 结论）仍由 agent 想好、经参数交给引擎。
+// 纪律：查重与引用校验全部在落盘前做完，任何一项不过 → 不落盘。
+// 依据 docs/context-query-write-path.md（§4 命令契约）。
+
+const LIMIT_DOD = 200;          // --dod 上限（Windows argv 与「一句 DoD」双重理由）
+const LIMIT_TITLE = 40;         // FINDINGS 主题上限
+const LIMIT_CONCLUSION = 500;   // 结论一段话上限
+const LIMIT_TEXT = 200;         // progress 单行日志上限
+const FINDING_SOURCES = ['调研探针', '开发中发现', '失败尝试', '外部输入'];
+const PROGRESS_KINDS = ['进展', '决策', '错误'];
+
+/** FINDINGS.md + FINDINGS.archive.md 里已用过的 F 编号。 */
+function existingFids(root) {
+  const text = [read(path.join(root, 'FINDINGS.md')), read(path.join(root, 'FINDINGS.archive.md'))]
+    .filter((t) => t !== null).join('\n');
+  return new Set([...text.matchAll(/^###\s*(F\d+)/gm)].map((m) => m[1].replace(/^f/i, 'F')));
+}
+
+/** 下一个 F 编号：热区 + 归档已用最大 + 1；永不复用。 */
+function nextFid(root) {
+  const nums = [...existingFids(root)].map((s) => Number(s.slice(1)));
+  return `F${(nums.length ? Math.max(...nums) : 0) + 1}`;
+}
+
+/** 本命令不该出现的 flag（含 parseArgs 兜底抓到的未知 flag）→ 退出 3。 */
+function rejectFlags(opts, allowed) {
+  const bad = [];
+  if (opts.unknownFlag) bad.push(opts.unknownFlag);
+  for (const k of Object.keys(opts)) {
+    if (k === 'positional' || k === 'unknownFlag' || allowed.includes(k)) continue;
+    bad.push(`--${k}`);
+  }
+  return bad;
+}
+
+/** 插入段首（紧急插队）：段内第一个任务块之前；段内无块时等同追加。 */
+function insertBlockHead(doc, sectionPrefix, block) {
+  const sec = findSection(doc, sectionPrefix);
+  if (!sec) throw new Error(`TASKS.md 缺少「${sectionPrefix}」段`);
+  let idx = sec.end;
+  for (let i = sec.start; i < sec.end; i++) if (/^### /.test(doc.lines[i])) { idx = i; break; }
+  const ins = [...block];
+  if (doc.lines[idx - 1] !== undefined && doc.lines[idx - 1].trim() !== '') ins.unshift('');
+  if (doc.lines[idx] !== undefined && doc.lines[idx].trim() !== '') ins.push('');
+  doc.lines.splice(idx, 0, ...ins);
+}
+
+/** FINDINGS.md 中某 F 条目的行范围（不含尾部空行），找不到返回 null。 */
+function entryRange(lines, id) {
+  const start = lines.findIndex((l) => new RegExp(`^###\\s+${id}\\s*[：:]`).test(l));
+  if (start < 0) return null;
+  let end = start + 1;
+  while (end < lines.length && !/^###\s+F\d+\s*[：:]/.test(lines[end]) && !/^##\s/.test(lines[end])) end++;
+  while (end > start + 1 && lines[end - 1].trim() === '') end--;
+  return { start, end };
+}
+
+/** 在「热条目」段末尾追加条目块；无该段则追加到文件末尾。 */
+function appendFindingBlock(root, block) {
+  const file = path.join(root, 'FINDINGS.md');
+  const lines = read(file).split('\n');
+  const start = lines.findIndex((l) => /^##\s*热条目/.test(l));
+  const from = start < 0 ? 0 : start + 1;
+  let end = lines.length;
+  if (start >= 0) for (let i = from; i < lines.length; i++) if (/^##\s/.test(lines[i])) { end = i; break; }
+  let idx = end;
+  while (idx > from && lines[idx - 1].trim() === '') idx--;
+  const ins = [...block];
+  if (lines[idx - 1] !== undefined && lines[idx - 1].trim() !== '') ins.unshift('');
+  lines.splice(idx, 0, ...ins);
+  fs.writeFileSync(file, lines.join('\n'));
+}
+
+/** 在某 F 条目块内追加一行（互写 `- 参见：F?` 用）。 */
+function appendEntryLine(root, id, line) {
+  const file = path.join(root, 'FINDINGS.md');
+  const lines = read(file).split('\n');
+  const range = entryRange(lines, id);
+  if (!range) return false;
+  lines.splice(range.end, 0, line);
+  fs.writeFileSync(file, lines.join('\n'));
+  return true;
+}
+
+/** 结论纪律：不许问句、不许「待确认 / 待决」。 */
+function isOpenEnded(conclusion) {
+  return /[?？]\s*$/.test(conclusion) || /待确认|待决/.test(conclusion);
+}
+
+/** 标题命中：精确相等优先，再走相似（相似对 <4 字的短标题恒为 false，故必须先看精确）。 */
+const titleHit = (a, b) => normTitle(a) === normTitle(b) || similarTitles(a, b);
+
+/** `- 已解决：X ✅（日期）` 里的任务名 X；旧「已裁决」区没有任务名，返回 ''。 */
+function resolvedTaskName(item) {
+  if (item.section === 'resolved') return '';
+  const m = String(item.resolvedLine || '').match(/^([^✅（(]+)/);
+  const tn = m ? m[1].trim() : '';
+  return tn && !/[→—]/.test(tn) && !tn.startsWith('-') ? tn : '';
+}
+
+/** INBOX 已解决命中：既比停车项标题，也比「解决它的那个任务」的名字。 */
+function solvedHit(items, name) {
+  return items.filter((i) => i.resolved).find((i) => {
+    if (titleHit(i.title, name)) return true;
+    const tn = resolvedTaskName(i);
+    return tn ? titleHit(tn, name) : false;
+  });
+}
+
+/** INBOX 已解决命中时的统一回话（无任务名可回时不瞎编）。 */
+function solvedNotice(item) {
+  const tn = resolvedTaskName(item);
+  return tn ? `[plan] 已由 ${tn} ✅ 实现` : `[plan] 已裁决：${item.title}`;
+}
+
+// ── task-add ────────────────────────────────────────────────
+
+function cmdTaskAdd(root, name, opts) {
+  const bad = rejectFlags(opts, ['dod', 'section', 'tag', 'basis', 'from', 'pre', 'head']);
+  if (bad.length) { out(`[plan] 未知参数：${bad.join(' ')}`); return 3; }
+  if (!name) { out('[plan] 缺少任务名：plan.mjs task-add "<任务名>" --dod "<一句>"'); return 3; }
+
+  const dod = String(opts.dod || '').trim();
+  if (!dod) { out('[plan] 缺少 --dod：一句可验证的完成标准（判断活，引擎不代写）'); return 3; }
+  if (dod.length > LIMIT_DOD) { out(`[plan] --dod 超 ${LIMIT_DOD} 字（当前 ${dod.length}）：请压缩成一句`); return 3; }
+
+  const section = opts.section || '已拆好';
+  if (/^调研/.test(section)) {
+    out('[plan] 本期不支持 --section 调研：调研任务必须带「时间盒」与「产出」，且时间盒须先问用户——命令化会绕过这条纪律');
+    return 3;
+  }
+  if (!/^(已拆好|进行中)/.test(section)) { out(`[plan] 未知 --section：${section}（可选 已拆好 / 进行中）`); return 3; }
+  if (opts.head && !/^已拆好/.test(section)) { out('[plan] --head 只对「已拆好」有效'); return 3; }
+
+  const doc = loadTasksDoc(root);
+  if (!doc) { out('[plan] 未找到 TASKS.md，请先运行 plan-init'); return 1; }
+  if (!findSection(doc, section)) { out(`[plan] TASKS.md 缺「${section}」段`); return 1; }
+
+  // 查重 1：TASKS 任意区标题重叠（含已完成）→ 退 2，不新建
+  const dups = allTasks(doc).filter((t) => titleHit(t.title, name));
+  if (dups.length) {
+    out(`[plan] 任务重名，未新建：「${name}」已存在`);
+    for (const t of dups) out(`- ${t.zone} ｜ ${normTitle(t.title)}`);
+    return 2;
+  }
+
+  // 查重 2：INBOX 已解决 → 退 0（没新建，看 stdout 才知道）；未决相似 → 软警告仍新建
+  const inbox = parseInbox(root);
+  const solved = solvedHit(inbox, name);
+  if (solved) { out(solvedNotice(solved)); return 0; }
+  const pendingLike = inbox.filter((i) => i.section === 'pending' && !i.resolved).find((i) => titleHit(i.title, name));
+
+  // 引用校验：任一项不存在 → 退 2，不落盘
+  if (opts.basis) {
+    const fids = parseFids(opts.basis);
+    const have = existingFids(root);
+    const missing = fids.filter((f) => !have.has(f));
+    if (!fids.length || missing.length) { out(`[plan] 依据不存在的结论：${missing.join(',') || opts.basis}`); return 2; }
+  }
+  let fromLine = '';
+  if (opts.from) {
+    const q = inboxQuery(opts.from);
+    if (!inbox.some((i) => i.title === q || similarTitles(i.title, q) || i.line.includes(q))) {
+      out(`[plan] 未找到 INBOX 条目：${q}`);
+      return 2;
+    }
+    fromLine = `INBOX ${q}`;
+  }
+  let preName = '';
+  if (opts.pre) {
+    const hit = allTasks(doc).find((t) => titleHit(t.title, opts.pre));
+    if (!hit) { out(`[plan] 未找到前置任务：${opts.pre}`); return 2; }
+    preName = normTitle(hit.title);
+  }
+
+  const block = [`### ${name}`, `- DoD：${dod}`];
+  if (opts.tag) block.push(`- 标签：${opts.tag}`);
+  if (opts.basis) block.push(`- 依据：${opts.basis}`);
+  if (fromLine) block.push(`- 来自：${fromLine}`);
+  if (preName) block.push(`- 前置：${preName}`);
+
+  if (opts.head) insertBlockHead(doc, section, block);
+  else insertBlock(doc, section, block);
+  saveTasksDoc(doc);
+
+  const zone = findSection(doc, section).name;
+  const links = [];
+  if (opts.basis) links.push(`依据：${opts.basis}`);
+  if (fromLine) links.push(`来自：${fromLine}`);
+  if (preName) links.push(`前置：${preName}`);
+  out(`[plan] 已录入「${zone}」${opts.head ? '队首' : '队尾'}：${name}${opts.tag ? ` ｜ 标签：${opts.tag}` : ''}`);
+  out(`- DoD：${dod}`);
+  if (links.length) out(`- 关联：${links.join(' ｜ ')}`);
+  if (pendingLike) out(`[plan] 提示：未决 INBOX「${pendingLike.title}」与本任务相似（未写已解决）`);
+  return 0;
+}
+
+// ── finding-add ─────────────────────────────────────────────
+
+function cmdFindingAdd(root, opts) {
+  const bad = rejectFlags(opts, ['title', 'source', 'conclusion', 'tag', 'impact', 'material', 'trace', 'amend', 'force']);
+  if (bad.length) { out(`[plan] 未知参数：${bad.join(' ')}`); return 3; }
+  const file = path.join(root, 'FINDINGS.md');
+  if (!isFile(file)) { out('[plan] 未找到 FINDINGS.md，请先运行 plan-init'); return 1; }
+
+  // 规范化 --amend 的编号：F3 / f3 / 3 都收
+  let amendId = null;
+  if (opts.amend) {
+    const raw = String(opts.amend).trim().replace(/^f/i, '');
+    if (!/^\d+$/.test(raw)) { out(`[plan] --amend 需要 F 编号（如 --amend F3），收到：${opts.amend}`); return 3; }
+    amendId = `F${raw}`;
+  }
+
+  const conclusion = String(opts.conclusion || '').trim();
+  if (amendId) {
+    if (opts.title || opts.source || opts.force) {
+      out('[plan] --amend 不能与 --title / --source / --force 同用（补充不新开条目）');
+      return 3;
+    }
+    // 条目级字段不能进「补」：parseFindings 按条目合并同名键，补里的 `- 标签：` 会覆盖原条目字段。
+    // 明确拒绝而不是静默丢弃——静默丢弃会让 agent 以为记下了材料指针。
+    const entryLevel = ['tag', 'impact', 'material', 'trace'].filter((k) => opts[k]);
+    if (entryLevel.length) {
+      out(`[plan] --amend 不支持 ${entryLevel.map((k) => `--${k}`).join(' / ')}：补小节只追加一段结论；这些是条目级字段，写进补里会覆盖原条目`);
+      return 3;
+    }
+    if (!conclusion) { out('[plan] 缺少 --conclusion：要补充的一段话'); return 3; }
+    if (conclusion.length > LIMIT_CONCLUSION) { out(`[plan] --conclusion 超 ${LIMIT_CONCLUSION} 字：改 notes + --material`); return 3; }
+    if (isOpenEnded(conclusion)) { out('[plan] 结论不是陈述句（问句 / 待确认 / 待决）：不进热区'); return 3; }
+
+    const lines = read(file).split('\n');
+    const range = entryRange(lines, amendId);
+    if (!range) { out(`[plan] 未找到 ${amendId}`); return 2; }
+    // 用 #### 而非 ###：### 会被 parseFindings 当作新条目边界，把 F3 的块切断
+    lines.splice(range.end, 0, '', `#### 补（${localDate()}）`, '', conclusion);
+    fs.writeFileSync(file, lines.join('\n'));
+    const rc = cmdReindex(root, true);
+    out(`[plan] 已补充 ${amendId}：#### 补（${localDate()}）`);
+    out(rc === 0 ? '[plan] 已再生索引' : '[plan] 索引再生失败，请手动运行 plan.mjs reindex');
+    return 0;
+  }
+
+  const title = String(opts.title || '').trim();
+  const source = String(opts.source || '').trim();
+  if (!title) { out('[plan] 缺少 --title：条目的主题一句话（写进 ### F<n>：<主题>，索引与查重都靠它）'); return 3; }
+  if (title.length > LIMIT_TITLE) { out(`[plan] --title 超 ${LIMIT_TITLE} 字（当前 ${title.length}）`); return 3; }
+  if (!source) { out(`[plan] 缺少 --source：${FINDING_SOURCES.join(' / ')}`); return 3; }
+  if (!FINDING_SOURCES.includes(source)) { out(`[plan] 未知 --source：${source}（${FINDING_SOURCES.join(' / ')}）`); return 3; }
+  if (!conclusion) { out('[plan] 缺少 --conclusion：一段话结论（判断活，引擎不代写）'); return 3; }
+  if (conclusion.length > LIMIT_CONCLUSION) { out(`[plan] --conclusion 超 ${LIMIT_CONCLUSION} 字：改 notes + --material`); return 3; }
+  if (isOpenEnded(conclusion)) { out('[plan] 结论不是陈述句（问句 / 待确认 / 待决）：不进热区'); return 3; }
+  if (opts.material && !repoPathOk(root, opts.material)) { out(`[plan] 材料路径打不开：${opts.material}`); return 2; }
+
+  // 同主题查重：已有有效条目 → 逼 --amend；确有第二条独立结论才 --force
+  const hit = parseFindings(root)
+    .filter((e) => !/推翻/.test(e.status))
+    .find((e) => titleHit(e.theme, title) || similarTitles(e.theme, conclusion));
+  if (hit && !opts.force) {
+    out(`[plan] 同主题已有 ${hit.id}：${hit.theme}`);
+    out(`[plan] 改用 --amend ${hit.id} 补充；确属另一条独立结论则加 --force`);
+    return 2;
+  }
+
+  const id = nextFid(root);
+  const block = [
+    `### ${id}：${title}`,
+    `- 日期：${localDate()}`,
+    `- 来源：${source}`,
+  ];
+  if (opts.tag) block.push(`- 标签：${opts.tag}`);
+  block.push(`- 结论：${conclusion}`);
+  if (opts.material) block.push(`- 材料：${opts.material}`);
+  if (opts.trace) block.push(`- 过程追溯：${opts.trace}`);
+  block.push(`- 影响：${opts.impact || '无'}`);
+  block.push('- 状态：有效');
+  if (hit && opts.force) block.push(`- 参见：${hit.id}`);
+
+  appendFindingBlock(root, block);
+  if (hit && opts.force) appendEntryLine(root, hit.id, `- 参见：${id}`);
+
+  const rc = cmdReindex(root, true);
+  const made = parseFindings(root).find((e) => e.id === id);
+  out(made ? findingIndexLine(made) : `${id} | ${localDate()} | ${opts.tag || '未分类'} | 有效 | ${title}`);
+  out(rc === 0 ? '[plan] 已再生索引' : '[plan] 索引再生失败，请手动运行 plan.mjs reindex');
+  return 0;
+}
+
+// ── inbox-add ───────────────────────────────────────────────
+
+function cmdInboxAdd(root, name, opts) {
+  const bad = rejectFlags(opts, ['flag', 'origin', 'finding', 'date']);
+  if (bad.length) { out(`[plan] 未知参数：${bad.join(' ')}`); return 3; }
+  if (!name) { out('[plan] 缺少标题：plan.mjs inbox-add "<想法一句话>"'); return 3; }
+
+  let mark = '⚪';
+  if (opts.flag) {
+    if (opts.flag === '红') mark = '🔴';
+    else if (opts.flag !== '白') { out(`[plan] 未知 --flag：${opts.flag}（红 / 白）`); return 3; }
+  }
+
+  let fid = '';
+  if (opts.finding) {
+    const fids = parseFids(opts.finding);
+    const have = existingFids(root);
+    const missing = fids.filter((f) => !have.has(f));
+    if (!fids.length || missing.length) { out(`[plan] 引用不存在的结论：${missing.join(',') || opts.finding}`); return 2; }
+    fid = fids.join(',');
+  }
+
+  const file = path.join(root, 'INBOX.md');
+  if (!isFile(file)) { out('[plan] 未找到 INBOX.md，请先运行 plan-init'); return 1; }
+
+  const items = parseInbox(root);
+  const solved = solvedHit(items, name);
+  if (solved) { out(solvedNotice(solved)); return 0; }
+  const pendingLike = items.filter((i) => i.section === 'pending' && !i.resolved).find((i) => titleHit(i.title, name));
+
+  const tail = [];
+  if (opts.origin) tail.push(`来源：${opts.origin}`);
+  if (fid) tail.push(fid);
+  const line = `- [ ] ${opts.date || localDate()} ${mark} ${name}${tail.length ? ` — ${tail.join(' ｜ ')}` : ''}`;
+
+  const lines = read(file).split('\n');
+  const start = lines.findIndex((l) => /^##\s*待裁决/.test(l));
+  if (start < 0) { out('[plan] INBOX.md 缺「待裁决」段'); return 2; }
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) if (/^##\s/.test(lines[i])) { end = i; break; }
+  let idx = end;
+  while (idx > start + 1 && lines[idx - 1].trim() === '') idx--;
+  const ins = [line];
+  if (lines[idx - 1] !== undefined && lines[idx - 1].trim() !== '') ins.unshift('');
+  lines.splice(idx, 0, ...ins);
+  fs.writeFileSync(file, lines.join('\n'));
+
+  out(`[plan] 已停 INBOX：${name}`);
+  if (pendingLike) out(`[plan] 提示：未决 INBOX「${pendingLike.title}」相似，仍已写入（不自动合并）`);
+  return 0;
+}
+
+// ── progress-log ────────────────────────────────────────────
+
+function cmdProgressLog(root, slug, opts) {
+  const bad = rejectFlags(opts, ['kind', 'text', 'position', 'next', 'date']);
+  if (bad.length) { out(`[plan] 未知参数：${bad.join(' ')}`); return 3; }
+  if (!slug) { out('[plan] 缺少工作区：plan.mjs progress-log <slug> --text "<一行>"'); return 3; }
+
+  const text = String(opts.text || '').trim();
+  if (text && text.length > LIMIT_TEXT) { out(`[plan] --text 超 ${LIMIT_TEXT} 字（当前 ${text.length}）：详情写 notes/`); return 3; }
+  if (!text && !opts.position && !opts.next) {
+    out('[plan] 缺少 --text / --position / --next：至少要给一样');
+    return 3;
+  }
+  if (!text && opts.kind) { out('[plan] --kind 只在给了 --text 时有意义（没有日志行可归类）'); return 3; }
+  const kind = opts.kind || '进展';
+  if (text && !PROGRESS_KINDS.includes(kind)) { out(`[plan] 未知 --kind：${kind}（${PROGRESS_KINDS.join(' / ')}）`); return 3; }
+
+  const wsAbs = resolveWsDir(root, slug);
+  if (!wsAbs) { out(`[plan] 未找到工作区：${slug}`); return 2; }
+  const rel = path.relative(root, wsAbs).replace(/\\/g, '/');
+  if (/(^|\/)done\//.test(rel)) { out(`[plan] 工作区已归档、只读：${rel}`); return 2; }
+
+  const acts = [];
+  if (text) {
+    const progFile = path.join(wsAbs, 'progress.md');
+    if (!isFile(progFile)) { out(`[plan] 未找到 ${rel}/progress.md`); return 2; }
+    const lines = read(progFile).split('\n');
+    const date = opts.date || localDate();
+    const secStart = lines.findIndex((l) => /^##\s*日志/.test(l));
+    const from = secStart < 0 ? 0 : secStart + 1;
+    let secEnd = lines.length;
+    if (secStart >= 0) for (let i = from; i < lines.length; i++) if (/^##\s/.test(lines[i])) { secEnd = i; break; }
+
+    const dayRe = new RegExp(`^###\\s*${date}\\s*$`);
+    let day = -1;
+    for (let i = from; i < secEnd; i++) if (dayRe.test(lines[i].trim())) { day = i; break; }
+
+    if (day < 0) {
+      let at = secEnd;
+      while (at > from && lines[at - 1].trim() === '') at--;
+      lines.splice(at, 0, '', `### ${date}`, '', `- ${kind}：${text}`);
+    } else {
+      let end = day + 1;
+      while (end < secEnd && !/^###\s/.test(lines[end])) end++;
+      while (end > day + 1 && lines[end - 1].trim() === '') end--;
+      lines.splice(end, 0, `- ${kind}：${text}`);
+    }
+    fs.writeFileSync(progFile, lines.join('\n'));
+    acts.push(`已记 progress（${kind}）`);
+  }
+
+  if (opts.position || opts.next) {
+    const planFile = path.join(wsAbs, 'plan.md');
+    if (!isFile(planFile)) { out(`[plan] 未找到 ${rel}/plan.md`); return 2; }
+    const lines = read(planFile).split('\n');
+    const start = lines.findIndex((l) => /^##\s*当前位置/.test(l));
+    if (start < 0) { out('[plan] plan.md 缺「当前位置」段'); return 2; }
+    let end = lines.length;
+    for (let i = start + 1; i < lines.length; i++) if (/^##\s/.test(lines[i])) { end = i; break; }
+    const idxs = [];
+    for (let i = start + 1; i < end; i++) if (/^- /.test(lines[i])) idxs.push(i);
+
+    // 保留模板里的标签（进行到哪一步 / 下一步要做什么），只换值
+    const setLine = (nth, raw) => {
+      const i = idxs[nth - 1];
+      if (i === undefined) { out(`[plan] 「当前位置」第 ${nth} 条不存在`); return false; }
+      const m = lines[i].match(/^-\s*([^：:]+)[：:]/);
+      const label = m ? m[1].trim() : '';
+      const val = String(raw).trim();
+      const dup = label && (val === label || val.startsWith(`${label}：`) || val.startsWith(`${label}:`));
+      lines[i] = label && !dup ? `- ${label}：${val}` : `- ${val}`;
+      return true;
+    };
+    const changed = [];
+    if (opts.position) { if (!setLine(1, opts.position)) return 2; changed.push(1); }
+    if (opts.next) { if (!setLine(2, opts.next)) return 2; changed.push(2); }
+    fs.writeFileSync(planFile, lines.join('\n'));
+    acts.push(`已改当前位置（第 ${changed.join('、')} 条）`);
+  }
+
+  out(`[plan] ${acts.join(' ｜ ')}：${rel}`);
+  return 0;
+}
 
 function cmdDoctor(globalOnly) {
   let PASS = 0; let WARN = 0; let FAIL = 0;
@@ -1483,6 +1907,25 @@ function parseArgs(args) {
     else if (a === '--source' || a.startsWith('--source=')) i = take(i, a, 'source');
     else if (a === '--status' || a.startsWith('--status=')) i = take(i, a, 'status');
     else if (a === '--impact' || a.startsWith('--impact=')) i = take(i, a, 'impact');
+    else if (a === '--head') opts.head = true;
+    else if (a === '--force') opts.force = true;
+    else if (a === '--amend' || a.startsWith('--amend=')) i = take(i, a, 'amend');
+    else if (a === '--dod' || a.startsWith('--dod=')) i = take(i, a, 'dod');
+    else if (a === '--section' || a.startsWith('--section=')) i = take(i, a, 'section');
+    else if (a === '--basis' || a.startsWith('--basis=')) i = take(i, a, 'basis');
+    else if (a === '--from' || a.startsWith('--from=')) i = take(i, a, 'from');
+    else if (a === '--pre' || a.startsWith('--pre=')) i = take(i, a, 'pre');
+    else if (a === '--title' || a.startsWith('--title=')) i = take(i, a, 'title');
+    else if (a === '--conclusion' || a.startsWith('--conclusion=')) i = take(i, a, 'conclusion');
+    else if (a === '--material' || a.startsWith('--material=')) i = take(i, a, 'material');
+    else if (a === '--trace' || a.startsWith('--trace=')) i = take(i, a, 'trace');
+    else if (a === '--origin' || a.startsWith('--origin=')) i = take(i, a, 'origin');
+    else if (a === '--flag' || a.startsWith('--flag=')) i = take(i, a, 'flag');
+    else if (a === '--finding' || a.startsWith('--finding=')) i = take(i, a, 'finding');
+    else if (a === '--kind' || a.startsWith('--kind=')) i = take(i, a, 'kind');
+    else if (a === '--text' || a.startsWith('--text=')) i = take(i, a, 'text');
+    else if (a === '--position' || a.startsWith('--position=')) i = take(i, a, 'position');
+    else if (a === '--next' || a.startsWith('--next=')) i = take(i, a, 'next');
     else if (a.startsWith('--')) opts.unknownFlag = a;
     else opts.positional.push(a);
   }
@@ -1505,6 +1948,13 @@ function usage() {
     '  start "<任务名>" [--workspace] [--date YYYY-MM-DD]   认领任务',
     '  finish "<任务名>" [--resolve "<INBOX>"] [--date YYYY-MM-DD]  完成任务',
     '  reindex                     再生 FINDINGS 受管索引区',
+    '  task-add "<标题>" --dod "<一句>" [--section 已拆好|进行中] [--tag X] [--basis F2]',
+    '                              [--from "INBOX x"] [--pre "<任务名>"] [--head]   追加任务（落盘前查重）',
+    '  finding-add --title "<主题>" --source <来源> --conclusion "<一段话>"',
+    '                              [--tag X] [--impact 无] [--material <路径>] [--trace <路径>] [--force]',
+    '  finding-add --amend F3 --conclusion "<补充>"        在 F3 下追加补，不新开号',
+    '  inbox-add "<标题>" [--flag 红|白] [--origin "<来源>"] [--finding F3] [--date YYYY-MM-DD]',
+    '  progress-log <slug> [--text "<一行>"] [--kind 进展|决策|错误] [--position "<一行>"] [--next "<一行>"]',
     '  doctor [--global]           安装自检（PASS / WARN / FAIL）',
     '',
     '环境变量：PLANNING_ROOT（项目根）、PLANNING_HOOKS_DISABLED=1（hook 静默）、PLANNING_HOOKS_NO_THROTTLE=1（关节流）',
@@ -1551,6 +2001,16 @@ function main() {
     return cmdLinks(root, opts);
   }
 
+
+  const appends = new Set(['task-add', 'finding-add', 'inbox-add', 'progress-log']);
+  if (appends.has(cmd)) {
+    const root = findRoot();
+    if (!root) return noRoot();
+    if (cmd === 'task-add') return cmdTaskAdd(root, opts.positional[0], opts);
+    if (cmd === 'finding-add') return cmdFindingAdd(root, opts);
+    if (cmd === 'inbox-add') return cmdInboxAdd(root, opts.positional[0], opts);
+    return cmdProgressLog(root, opts.positional[0], opts);
+  }
 
   if (cmd === 'start' || cmd === 'finish') {
     const name = opts.positional[0];

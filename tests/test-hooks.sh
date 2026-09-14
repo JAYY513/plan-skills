@@ -5,6 +5,8 @@
 
 HOOKS_DIR="$(cd "$(dirname "$0")/../skills/plan-task/hooks" && pwd)"
 ENGINE="$HOOKS_DIR/../engine/plan.mjs"
+# 有 cygpath 时（Git Bash / MSYS）转成原生路径，否则 node 找不到模块
+if command -v cygpath >/dev/null 2>&1; then ENGINE=$(cygpath -w "$ENGINE"); fi
 
 command -v node >/dev/null 2>&1 || {
   echo "FAIL: 未找到 node，引擎与测试需要 Node.js >= 18"
@@ -23,9 +25,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Windows 的 Git Bash / MSYS：node 是原生程序，不认 /c/... 这类 POSIX 路径
+# （会把 /c/x 解析成 C:////c////x）。给 node 的参数一律先转原生路径。
+winpath() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else echo "$1"; fi
+}
+
+# mk：回显 POSIX 路径（供 cat / mkdir / rm 使用），同时把原生路径放进 $ROOT（供 PLANNING_ROOT 使用）
 mk() {
   d=$(mktemp -d)
   TMPDIRS="$TMPDIRS $d"
+  ROOT=$(winpath "$d")
   echo "$d"
 }
 
@@ -42,7 +52,7 @@ report() {
 dir=$(mk)
 ok=0
 for s in session-start pre-tool-use post-tool-use stop-gate; do
-  out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/$s.sh")
+  out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/$s.sh")
   rc=$?
   if [ $rc -ne 0 ] || [ -n "$out" ]; then
     ok=1
@@ -61,7 +71,7 @@ cat > "$dir/ROADMAP.md" <<'EOF'
 
 ## ▶ M1：测试里程碑
 EOF
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/session-start.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/session-start.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -99,7 +109,7 @@ cat > "$dir/INBOX.md" <<'EOF'
 
 - [x] 旧想法
 EOF
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/session-start.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/session-start.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -113,7 +123,7 @@ report "进行中任务 + INBOX 待裁决：提示行数字正确" $ok
 # ── 用例 4：活跃工作区无 postmortem → stop-gate 阻止且 exit 2；补齐后 exit 0 ──
 dir=$(mk)
 mkdir -p "$dir/.planning/2026-07-18-demo-task"
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/stop-gate.sh")
 rc=$?
 ok=0
 [ $rc -eq 2 ] || ok=1
@@ -128,7 +138,7 @@ cat > "$dir/.planning/2026-07-18-demo-task/progress.md" <<'EOF'
 - 一句话坑总结：无
 - 本文档为过程记录，结论以 FINDINGS 为准
 EOF
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/stop-gate.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -137,7 +147,7 @@ report "补齐 postmortem 后：stop-gate exit 0" $ok
 # ── 用例 5：PLANNING_HOOKS_DISABLED=1 → warn 场景下也静默 exit 0 ──
 dir=$(mk)
 mkdir -p "$dir/.planning/2026-07-18-demo-task"
-out=$(PLANNING_HOOKS_DISABLED=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+out=$(PLANNING_HOOKS_DISABLED=1 PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/stop-gate.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -147,7 +157,7 @@ report "PLANNING_HOOKS_DISABLED=1：stop-gate 静默 exit 0" $ok
 # ── 用例 6：pre-compact ────────────────────────────────────────
 dir=$(mk)
 mkdir -p "$dir/.planning/2026-07-18-demo-task"
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/pre-compact.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/pre-compact.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -158,7 +168,7 @@ report "pre-compact：活跃工作区输出提醒含工作区名" $ok
 
 dir=$(mk)
 mkdir -p "$dir/.planning/2026-07-18-demo-task/notes"
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/pre-compact.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/pre-compact.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -167,7 +177,7 @@ echo "$out" | grep -q 'notes/' || ok=1
 report "pre-compact：已有 notes/ 时催材料落盘" $ok
 
 dir=$(mk)
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/pre-compact.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/pre-compact.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -177,7 +187,7 @@ report "pre-compact：无工作区静默 exit 0" $ok
 # ── 用例 7：user-prompt-submit ─────────────────────────────────
 # 空目录静默 exit 0
 dir=$(mk)
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/user-prompt-submit.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -208,7 +218,7 @@ cat > "$dir/TASKS.md" <<'EOF'
 - DoD：不应出现的待办 DoD
 EOF
 mkdir -p "$dir/.planning/2026-07-18-demo-task"
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/user-prompt-submit.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -231,7 +241,7 @@ cat > "$dir/TASKS.md" <<'EOF'
 ## 已拆好（待做）
 ### 不应出现
 EOF
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/user-prompt-submit.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -251,7 +261,7 @@ cat > "$dir/TASKS.md" <<'EOF'
 
 ### 任务甲
 EOF
-out=$(PLANNING_HOOKS_DISABLED=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+out=$(PLANNING_HOOKS_DISABLED=1 PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/user-prompt-submit.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -261,7 +271,7 @@ report "user-prompt-submit：PLANNING_HOOKS_DISABLED=1 静默 exit 0" $ok
 # ── 用例 8：permission-request ─────────────────────────────────
 # 空目录静默 exit 0
 dir=$(mk)
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/permission-request.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/permission-request.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -281,7 +291,7 @@ cat > "$dir/TASKS.md" <<'EOF'
 
 ### 任务乙
 EOF
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/permission-request.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/permission-request.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -297,14 +307,14 @@ cat > "$dir/TASKS.md" <<'EOF'
 
 ### 任务乙
 EOF
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/permission-request.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/permission-request.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
 [ -z "$out" ] || ok=1
 report "permission-request：无进行中任务静默 exit 0" $ok
 
-out=$(PLANNING_HOOKS_DISABLED=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/permission-request.sh")
+out=$(PLANNING_HOOKS_DISABLED=1 PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/permission-request.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -361,7 +371,7 @@ cat > "$dir/TASKS.md" <<'EOF'
 
 ### 任务乙
 EOF
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/stop-gate.sh")
 rc=$?
 ok=0
 [ $rc -eq 2 ] || ok=1
@@ -380,7 +390,7 @@ cat > "$dir/TASKS.md" <<'EOF'
 
 ### 任务乙
 EOF
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/stop-gate.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -396,7 +406,7 @@ cat > "$dir/TASKS.md" <<'EOF'
 
 ### 任务甲
 EOF
-out=$(PLANNING_HOOKS_DISABLED=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+out=$(PLANNING_HOOKS_DISABLED=1 PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/stop-gate.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -462,8 +472,8 @@ cat > "$dir/TASKS.md" <<'EOF'
 
 - DoD：乙的完成标准
 EOF
-out1=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
-out2=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+out1=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/user-prompt-submit.sh")
+out2=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/user-prompt-submit.sh")
 ok=0
 echo "$out1" | grep -q '进行中：任务甲（1）' || ok=1
 echo "$out1" | grep -q 'plan.mjs task "任务甲"' || ok=1
@@ -489,7 +499,7 @@ cat > "$dir/TASKS.md" <<'EOF'
 
 - DoD：乙的完成标准
 EOF
-out_dod=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+out_dod=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/user-prompt-submit.sh")
 n=$(printf '%s\n' "$out_dod" | wc -l)
 [ "$n" -eq 1 ] || { ok=1; echo "  ↳ DoD 不进比较集却出了 $n 行"; }
 cat > "$dir/TASKS.md" <<'EOF'
@@ -505,15 +515,15 @@ cat > "$dir/TASKS.md" <<'EOF'
 
 - DoD：乙的完成标准
 EOF
-out3=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+out3=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/user-prompt-submit.sh")
 echo "$out3" | grep -q '进行中：任务丙' || ok=1
 echo "$out3" | grep -q 'DoD：乙的完成标准' || ok=1
 echo "$out3" | grep -q 'plan.mjs task "任务丙"' || ok=1
 n=$(printf '%s\n' "$out3" | wc -l)
 [ "$n" -le 15 ] || { ok=1; echo "  ↳ 卡片行数 $n > 15"; }
 [ "$n" -gt 1 ] || { ok=1; echo "  ↳ 变化应出卡片，实际 $n 行"; }
-out4=$(PLANNING_HOOKS_NO_THROTTLE=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
-out5=$(PLANNING_HOOKS_NO_THROTTLE=1 PLANNING_ROOT="$dir" sh "$HOOKS_DIR/user-prompt-submit.sh")
+out4=$(PLANNING_HOOKS_NO_THROTTLE=1 PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/user-prompt-submit.sh")
+out5=$(PLANNING_HOOKS_NO_THROTTLE=1 PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/user-prompt-submit.sh")
 echo "$out4" | grep -q 'plan.mjs task "任务丙"' || ok=1
 n=$(printf '%s\n' "$out4" | wc -l)
 [ "$n" -eq 1 ] || { ok=1; echo "  ↳ NO_THROTTLE 应心跳 $n"; }
@@ -535,7 +545,7 @@ cat > "$dir/TASKS.md" <<EOF
 
 ## 已拆好（待做）
 EOF
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/stop-gate.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -553,7 +563,7 @@ cat > "$dir/TASKS.md" <<EOF
 
 ## 已拆好（待做）
 EOF
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/stop-gate.sh")
 rc=$?
 ok=0
 [ $rc -eq 2 ] || ok=1
@@ -581,7 +591,7 @@ cat > "$dir/TASKS.md" <<'EOF'
 ### 中文任务名 ✅
 - 完成：2026-08-01
 EOF
-out=$(PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh")
+out=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/stop-gate.sh")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -604,7 +614,7 @@ cat > "$dir/TASKS.md" <<'EOF'
 
 ## 已完成（待归档）
 EOF
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" start "store.js 扩展 tag 字段" --date "$TODAY")
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" start "store.js 扩展 tag 字段" --date "$TODAY")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -613,7 +623,7 @@ sed -n '/^## 进行中/,/^## 已拆好/p' "$dir/TASKS.md" | grep -q '### store.j
 sed -n '/^## 进行中/,/^## 已拆好/p' "$dir/TASKS.md" | grep -q "开始：$TODAY" || ok=1
 sed -n '/^## 已拆好/,/^## 调研/p' "$dir/TASKS.md" | grep -q '### store.js' && ok=1
 # 重复 start → 幂等 + 建工作区 + 补关联行
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" start "store.js 扩展 tag 字段" --workspace --date "$TODAY")
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" start "store.js 扩展 tag 字段" --workspace --date "$TODAY")
 rc=$?
 slug="$TODAY-store-js-扩展-tag-字段"
 echo "$out" | grep -q '无需重复认领' || ok=1
@@ -624,14 +634,14 @@ echo "$out" | grep -q '无需重复认领' || ok=1
 grep -q "关联 TASKS 条目：store.js 扩展 tag 字段" "$dir/.planning/$slug/plan.md" 2>/dev/null || grep -q "关联 TASKS 条目\*\*：store.js 扩展 tag 字段" "$dir/.planning/$slug/plan.md" || ok=1
 grep -q "工作区：.planning/$slug/" "$dir/TASKS.md" || ok=1
 # 未知任务 → exit 1
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" start "不存在的任务")
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" start "不存在的任务")
 rc=$?
 [ $rc -eq 1 ] || ok=1
 echo "$out" | grep -q '未找到任务' || ok=1
 report "引擎 start：认领补日期、幂等、--workspace 建目录补关联行、未知任务 exit 1" $ok
 
 # ── 用例 18：引擎 finish（缺证据 exit 1 → 补齐后 ✅ + 归档）──
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" finish "store.js 扩展 tag 字段")
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finish "store.js 扩展 tag 字段")
 rc=$?
 ok=0
 [ $rc -eq 1 ] || ok=1
@@ -662,7 +672,7 @@ cat > "$dir/.planning/$slug/progress.md" <<'EOF'
 - **踩过的坑**：无
 - **声明**：本文档为过程记录，结论以 FINDINGS.md 为准。
 EOF
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" finish "store.js 扩展 tag 字段" --date "$TODAY")
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finish "store.js 扩展 tag 字段" --date "$TODAY")
 rc=$?
 [ $rc -eq 0 ] || { ok=1; echo "$out"; }
 echo "$out" | grep -q '已完成：✅' || ok=1
@@ -671,25 +681,39 @@ sed -n '/^## 已完成/,$p' "$dir/TASKS.md" | grep -q "完成：$TODAY" || ok=1
 [ -d "$dir/.planning/done/$slug" ] || ok=1
 [ -d "$dir/.planning/$slug" ] && ok=1
 # finish 后 stop-gate 放行
-PLANNING_ROOT="$dir" sh "$HOOKS_DIR/stop-gate.sh" >/dev/null
+PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/stop-gate.sh" >/dev/null
 [ $? -eq 0 ] || ok=1
 report "引擎 finish：缺证据 exit 1 列缺失，补齐后 ✅ + 完成日期 + 工作区移入 done/" $ok
 
-# ── 用例 19：ps1 薄壳冒烟（有 pwsh 才跑，无则 SKIP 不计失败）──
-if command -v pwsh >/dev/null 2>&1; then
+# ── 用例 19：ps1 薄壳冒烟（有 pwsh 且真能跑才跑，否则 SKIP 不计失败）──
+# pwsh「存在」≠「能跑」：某些沙箱/安全策略下 pwsh 会被挂住不返回。
+# Git Bash / MSYS：GNU timeout 杀不掉原生 Win32 pwsh，预检会空等还可能留僵尸 → 直接 SKIP。
+# POSIX：只给空命令预检套 timeout 3（成功路径几乎 0 额外耗时；卡死最多 3s 后 SKIP）。
+# 预检通过后的真实用例不再套 timeout，避免第一次 JIT 启动被误杀。
+PW=""
+if [ -z "${MSYSTEM-}" ] && [ -z "${MINGW_PREFIX-}" ] && command -v pwsh >/dev/null 2>&1; then
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 3 pwsh -NoProfile -Command "exit 0" >/dev/null 2>&1 && PW=pwsh
+  else
+    pwsh -NoProfile -Command "exit 0" >/dev/null 2>&1 && PW=pwsh
+  fi
+fi
+if [ -n "$PW" ]; then
   dir=$(mk)
   ok=0
   for s in session-start pre-tool-use post-tool-use stop-gate user-prompt-submit pre-compact permission-request; do
-    PLANNING_ROOT="$dir" pwsh -NoProfile -ExecutionPolicy Bypass -File "$HOOKS_DIR/$s.ps1" >/dev/null 2>&1
-    [ $? -eq 0 ] || { ok=1; echo "  ↳ $s.ps1 空目录应 exit 0"; }
+    PLANNING_ROOT="$(winpath "$dir")" "$PW" -NoProfile -ExecutionPolicy Bypass -File "$HOOKS_DIR/$s.ps1" >/dev/null 2>&1
+    rc=$?
+    [ $rc -eq 0 ] || { ok=1; echo "  ↳ $s.ps1 空目录应 exit 0（实得 $rc）"; }
   done
   dir=$(mk)
   mkdir -p "$dir/.planning/2026-08-01-demo-task"
-  PLANNING_ROOT="$dir" pwsh -NoProfile -ExecutionPolicy Bypass -File "$HOOKS_DIR/stop-gate.ps1" >/dev/null 2>&1
-  [ $? -eq 2 ] || { ok=1; echo "  ↳ stop-gate.ps1 阻断场景应 exit 2"; }
+  PLANNING_ROOT="$(winpath "$dir")" "$PW" -NoProfile -ExecutionPolicy Bypass -File "$HOOKS_DIR/stop-gate.ps1" >/dev/null 2>&1
+  rc=$?
+  [ $rc -eq 2 ] || { ok=1; echo "  ↳ stop-gate.ps1 阻断场景应 exit 2（实得 $rc）"; }
   report "ps1 薄壳冒烟：静默场景 exit 0、stop-gate 阻断透传 exit 2" $ok
 else
-  echo "SKIP: ps1 薄壳冒烟（无 pwsh）"
+  echo "SKIP: ps1 薄壳冒烟（无 pwsh，或 pwsh 存在但不可执行 / 被安全策略阻塞）"
 fi
 
 # ── 用例 20：session-start 注入 SPEC 红线（边界 + 选型），空模板无噪音，超长截断 ──
@@ -719,7 +743,7 @@ cat > "$dir/SPEC.md" <<'EOF'
 |---|---|---|
 EOF
 touch "$dir/TASKS.md"
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" hook session-start)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" hook session-start)
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -747,14 +771,14 @@ cat > "$dir2/SPEC.md" <<'EOF'
 | 示例：后端框架 | xxx | 一句话理由 | YYYY-MM-DD |
 EOF
 touch "$dir2/TASKS.md"
-out2=$(PLANNING_ROOT="$dir2" node "$ENGINE" hook session-start)
+out2=$(PLANNING_ROOT="$(winpath "$dir2")" node "$ENGINE" hook session-start)
 echo "$out2" | grep -q 'SPEC 红线' && ok=1
 echo "$out2" | grep -q '示例：后端框架' && ok=1
 # 超长 SPEC → 截断（与 status 同上限 3 条 + 提示）
 dir3=$(mk)
 { echo '# SPEC'; echo; echo '## 不做什么（边界）'; echo; for i in $(seq 1 15); do echo "- 边界条目 $i"; done; } > "$dir3/SPEC.md"
 touch "$dir3/TASKS.md"
-out3=$(PLANNING_ROOT="$dir3" node "$ENGINE" hook session-start)
+out3=$(PLANNING_ROOT="$(winpath "$dir3")" node "$ENGINE" hook session-start)
 n=$(echo "$out3" | grep -c '边界：边界条目')
 [ "$n" -eq 3 ] || { ok=1; echo "  ↳ 截断应保留 3 条，实际 $n"; }
 echo "$out3" | grep -q '其余红线见 SPEC.md' || ok=1
@@ -781,7 +805,7 @@ cat > "$dir/TASKS.md" <<'EOF'
 
 ## 已完成（待归档）
 EOF
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" start "product ia probe" --workspace --date "$TODAY")
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" start "product ia probe" --workspace --date "$TODAY")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -794,7 +818,7 @@ echo "$out" | grep -q 'notes/' || ok=1
 grep -q "notes：product ia probe" "$dir/.planning/$rslug/notes/index.md" || ok=1
 grep -q "工作区：.planning/$rslug/" "$dir/TASKS.md" || ok=1
 # 进行中仍带时间盒时再 start --workspace 应复用、不丢 notes
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" start "product ia probe" --workspace --date "$TODAY")
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" start "product ia probe" --workspace --date "$TODAY")
 echo "$out" | grep -q '工作区已存在' || ok=1
 [ -f "$dir/.planning/$rslug/notes/index.md" ] || ok=1
 report "引擎 start：调研区 --workspace 复制 notes/index.md，普通复用不覆盖" $ok
@@ -857,7 +881,7 @@ cat > "$dir/INBOX.md" <<'EOF'
 - 2026-07-01 旧想法 → 删除 — 不做
 EOF
 
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" status)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" status)
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -870,43 +894,43 @@ echo "$out" | grep -q '提示：进行中 1 个，INBOX 待裁决 1 条' || ok=1
 echo "$out" | grep -q 'DoD：tag 字段可读写' && ok=1
 n=$(printf '%s\n' "$out" | wc -l)
 [ "$n" -le 8 ] || { ok=1; echo "  ↳ status 行数 $n > 8"; }
-js=$(PLANNING_ROOT="$dir" node "$ENGINE" status --json)
+js=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" status --json)
 echo "$js" | grep -q '"inProgress"' || ok=1
 echo "$js" | grep -q 'store.js 扩展 tag 字段' || ok=1
 
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" next)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" next)
 echo "$out" | grep -q '下一张：list 命令支持 --tag 过滤' || ok=1
 echo "$out" | grep -q 'DoD：list --tag 过滤可用' || ok=1
 
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" findings)
 echo "$out" | grep -q 'F2 | 2026-07-18 | 数据 | 有效 | 旧数据缺 tags 会崩' || ok=1
 echo "$out" | grep -q 'F1 | 2026-07-01 | 未分类 | 有效 | CLI 框架选型' || ok=1
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings --tag 数据)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" findings --tag 数据)
 echo "$out" | grep -q 'F2 |' || ok=1
 echo "$out" | grep -q 'F3 |' || ok=1
 echo "$out" | grep -q 'F1 |' && ok=1
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings --impact spec)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" findings --impact spec)
 echo "$out" | grep -q 'F1 |' || ok=1
 echo "$out" | grep -q 'F2 |' && ok=1
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings --full F2)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" findings --full F2)
 echo "$out" | grep -q '### F2：旧数据缺 tags 会崩' || ok=1
 echo "$out" | grep -q '缺字段要兼容' || ok=1
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings --full F99)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" findings --full F99)
 rc=$?
 [ $rc -eq 2 ] || ok=1
 echo "$out" | grep -q '未找到 F99' || ok=1
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings --nope)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" findings --nope)
 rc=$?
 [ $rc -eq 3 ] || ok=1
 
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" inbox)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" inbox)
 echo "$out" | grep -q 'list --tag 过滤' || ok=1
 echo "$out" | grep -q '云同步支持' && ok=1
 echo "$out" | grep -q '疑似已实现' || ok=1
 echo "$out" | grep -q 'list --tag 过滤' || ok=1
 dir2=$(mk)
 touch "$dir2/TASKS.md"
-out=$(PLANNING_ROOT="$dir2" node "$ENGINE" next)
+out=$(PLANNING_ROOT="$(winpath "$dir2")" node "$ENGINE" next)
 rc=$?
 [ $rc -eq 0 ] || ok=1
 echo "$out" | grep -q '（无匹配）' || ok=1
@@ -957,7 +981,7 @@ cat > "$dir/INBOX.md" <<'EOF'
 ## 已裁决（存档）
 EOF
 
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" task "store.js 扩展 tag 字段")
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task "store.js 扩展 tag 字段")
 rc=$?
 ok=0
 [ $rc -eq 0 ] || ok=1
@@ -967,30 +991,30 @@ echo "$out" | grep -q '依据：F2' || ok=1
 echo "$out" | grep -q '来自：INBOX 云同步支持' || ok=1
 echo "$out" | grep -q 'F2 | 2026-07-18 | 数据 | 有效 | 旧数据缺 tags' || ok=1
 echo "$out" | grep -q 'INBOX 云同步支持' || ok=1
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" inbox)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" inbox)
 echo "$out" | grep -q '认领中：store.js 扩展 tag 字段' || ok=1
 
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" task "不存在")
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task "不存在")
 rc=$?
 [ $rc -eq 2 ] || ok=1
 echo "$out" | grep -q '未找到任务：不存在' || ok=1
 
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" ws)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" ws)
 echo "$out" | grep -q '.planning/demo-ws' || ok=1
 echo "$out" | grep -q '正在改 store.js' || ok=1
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" ws demo-ws)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" ws demo-ws)
 echo "$out" | grep -q '正在改 store.js' || ok=1
 echo "$out" | grep -q 'F2 |' || ok=1
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" ws demo-ws --full)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" ws demo-ws --full)
 echo "$out" | grep -q 'progress body' || ok=1
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" ws nosuch)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" ws nosuch)
 rc=$?
 [ $rc -eq 2 ] || ok=1
 echo "$out" | grep -q '未找到工作区：nosuch' || ok=1
 
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" links --orphan)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" links --orphan)
 echo "$out" | grep -q '（无匹配）' || { ok=1; echo "  ↳ orphan: $out"; }
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" links)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" links)
 echo "$out" | grep -q 'INBOX 云同步支持 → 认领中 store.js 扩展 tag 字段' || ok=1
 echo "$out" | grep -q 'F F2 → 催生任务 store.js 扩展 tag 字段' || ok=1
 echo "$out" | grep -q 'T store.js 扩展 tag 字段 → 前置 list 命令支持 --tag 过滤' || ok=1
@@ -1003,7 +1027,7 @@ cat > "$dir/.planning/demo-ws/progress.md" <<'EOF'
 - **踩过的坑**：无
 - **声明**：本文档为过程记录，结论以 FINDINGS.md 为准。
 EOF
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" finish "store.js 扩展 tag 字段" --date 2026-09-14)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finish "store.js 扩展 tag 字段" --date 2026-09-14)
 rc=$?
 [ $rc -eq 0 ] || { ok=1; echo "$out"; }
 echo "$out" | grep -q '已回写结论：F2' || ok=1
@@ -1013,11 +1037,11 @@ grep -q '\- 已解决：store.js 扩展 tag 字段 ✅（2026-09-14）' "$dir/IN
 grep -q 'plan-index' "$dir/FINDINGS.md" || ok=1
 
 sed -n '/^## 待裁决/,/^## 已裁决/p' "$dir/INBOX.md" | grep -q '云同步支持' || ok=1
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" inbox --resolved)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" inbox --resolved)
 echo "$out" | grep -q '云同步支持' || ok=1
 echo "$out" | grep -q 'store.js 扩展 tag 字段' || ok=1
 
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" links)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" links)
 echo "$out" | grep -q 'T store.js 扩展 tag 字段 → F2' || ok=1
 echo "$out" | grep -q '解决 INBOX 云同步支持' || ok=1
 
@@ -1060,7 +1084,7 @@ cat > "$dir/FINDINGS.md" <<'EOF'
 - 来源：开发中发现
 - 状态：有效
 EOF
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" reindex)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" reindex)
 rc=$?
 [ $rc -eq 0 ] || ok=1
 echo "$out" | grep -q '已再生 FINDINGS 索引（1 条）' || ok=1
@@ -1068,7 +1092,7 @@ echo "$out" | grep -q '已再生 FINDINGS 索引（1 条）' || ok=1
 grep -q 'F9 | 2026-09-14 | 未分类 | 有效 | 索引再生' "$dir/FINDINGS.md" || ok=1
 
 grep -q 'plan-index:begin' "$dir/FINDINGS.md" || ok=1
-out=$(PLANNING_ROOT="$dir" node "$ENGINE" findings --tag 数据)
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" findings --tag 数据)
 echo "$out" | grep -q '（无匹配）' || ok=1
 for f in SPEC ROADMAP TASKS INBOX; do echo "# $f" > "$dir/$f.md"; done
 dout=$(cd "$dir" && node "$ENGINE" doctor)
@@ -1076,6 +1100,362 @@ echo "$dout" | grep -q '\[PASS\] FINDINGS 索引: 受管标记存在' || ok=1
 echo "$dout" | grep -q '\[FAIL\] FINDINGS 索引' && ok=1
 report "引擎 reindex 写入 plan-index" $ok
 
+
+
+# ══ 写入族（task-add / finding-add / inbox-add / progress-log）══
+# 依据 docs/context-query-write-path.md §8：断言退出码 + stdout 行数/关键字 + 落盘内容，不靠目测。
+
+# ── 用例 25：task-add 正常录入（stdout ≤5 行 + 落盘块） ──
+dir=$(mk)
+ok=0
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+### store.js 扩展 tag 字段
+- DoD：字段落库
+
+## 已拆好（待做）
+
+### 旧任务
+- DoD：占位
+
+## 已完成（待归档）
+EOF
+cat > "$dir/FINDINGS.md" <<'EOF'
+# FINDINGS
+
+## 索引
+
+## 热条目
+
+### F2：CLI 框架选型
+- 日期：2026-07-18
+- 来源：调研探针
+- 标签：技术选型
+- 结论：commander.js 满足需求
+- 影响：无
+- 状态：有效
+EOF
+cat > "$dir/INBOX.md" <<'EOF'
+# INBOX
+
+## 待裁决
+
+- [ ] 2026-09-01 ⚪ 云同步支持
+- 已解决：给同步加增量传输 ✅（2026-09-02）
+
+## 已裁决（存档）
+
+- 2026-09-03 旧想法 → 删除 — 不做
+EOF
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task-add "list 命令支持 --tag 过滤" --dod "list --tag 数据 只出带该 tag 的条目" --tag 数据 --basis F2 --from "INBOX 云同步支持")
+rc=$?
+[ $rc -eq 0 ] || { ok=1; echo "  ↳ rc=$rc"; }
+n=$(printf '%s\n' "$out" | wc -l)
+[ "$n" -le 5 ] || { ok=1; echo "  ↳ stdout $n 行 > 5"; }
+echo "$out" | grep -q '已录入「已拆好（待做）」队尾：list 命令支持 --tag 过滤' || ok=1
+echo "$out" | grep -q -- '- DoD：list --tag 数据 只出带该 tag 的条目' || ok=1
+echo "$out" | grep -q '关联：依据：F2 ｜ 来自：INBOX 云同步支持' || ok=1
+grep -q '^### list 命令支持 --tag 过滤$' "$dir/TASKS.md" || ok=1
+grep -q '^- 标签：数据$' "$dir/TASKS.md" || ok=1
+grep -q '^- 依据：F2$' "$dir/TASKS.md" || ok=1
+grep -q '^- 来自：INBOX 云同步支持$' "$dir/TASKS.md" || ok=1
+# 队尾：应排在「旧任务」之后
+tail -n 12 "$dir/TASKS.md" | grep -q '^### list 命令支持' || ok=1
+report "task-add：正常录入且 stdout ≤5 行" $ok
+
+# ── 用例 26：task-add 查重（重名退 2 / 已解决退 0 且不新建） ──
+ok=0
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task-add "list 命令支持 --tag 过滤" --dod "再来一次")
+rc=$?
+[ $rc -eq 2 ] || { ok=1; echo "  ↳ 重名 rc=$rc（期望 2）"; }
+echo "$out" | grep -q '任务重名，未新建' || ok=1
+echo "$out" | grep -q '已拆好 ｜ list 命令支持 --tag 过滤' || ok=1
+
+before=$(grep -c '^### ' "$dir/TASKS.md")
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task-add "给同步加增量传输" --dod "增量")
+rc=$?
+[ $rc -eq 0 ] || { ok=1; echo "  ↳ 已解决 rc=$rc（期望 0）"; }
+echo "$out" | grep -q '已由 给同步加增量传输 ✅ 实现' || ok=1
+after=$(grep -c '^### ' "$dir/TASKS.md")
+[ "$before" -eq "$after" ] || { ok=1; echo "  ↳ 已解决仍新建了任务（$before → $after）"; }
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task-add "旧想法" --dod "x")
+echo "$out" | grep -q '已裁决：旧想法' || ok=1
+[ "$(grep -c '^### ' "$dir/TASKS.md")" -eq "$after" ] || ok=1
+report "task-add：重名退 2；命中已解决退 0 且不新建" $ok
+
+# ── 用例 27：task-add 参数闸门（缺/超长 --dod、调研区、未知 flag） ──
+ok=0
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task-add "没写 DoD 的任务")
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ 缺 dod rc=$rc（期望 3）"; }
+echo "$out" | grep -q '缺少 --dod' || ok=1
+
+long=$(node -e 'process.stdout.write("长".repeat(201))')
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task-add "超长 DoD" --dod "$long")
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ 超长 dod rc=$rc（期望 3）"; }
+echo "$out" | grep -q -- '--dod 超 200 字' || ok=1
+
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task-add "探针" --dod "x" --section 调研)
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ 调研区 rc=$rc（期望 3）"; }
+echo "$out" | grep -q '本期不支持 --section 调研' || ok=1
+
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task-add "瞎参数" --dod "x" --zzz)
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ 未知 flag rc=$rc（期望 3）"; }
+echo "$out" | grep -q '未知参数：--zzz' || ok=1
+
+# 引用不存在 → 退 2 且不落盘
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task-add "引用坏结论" --dod "x" --basis F99)
+rc=$?
+[ $rc -eq 2 ] || { ok=1; echo "  ↳ 坏依据 rc=$rc（期望 2）"; }
+grep -q '^### 引用坏结论' "$dir/TASKS.md" && ok=1
+report "task-add：参数闸门与引用校验" $ok
+
+# ── 用例 28：task-add --head 插队首 ──
+ok=0
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task-add "紧急修线上 bug" --dod "复现脚本通过" --head)
+rc=$?
+[ $rc -eq 0 ] || { ok=1; echo "  ↳ rc=$rc"; }
+echo "$out" | grep -q '队首' || ok=1
+# 「已拆好」段内第一个任务块应是它
+awk '/^## 已拆好/{f=1;next} /^## /{f=0} f && /^### /{print;exit}' "$dir/TASKS.md" | grep -q '紧急修线上 bug' || ok=1
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task-add "配错 head" --dod "x" --head --section 进行中)
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ --head + 进行中 rc=$rc（期望 3）"; }
+report "task-add：--head 插队首且只对已拆好有效" $ok
+
+# ── 用例 29：finding-add 新开（编号 +1 / 立刻可查 / 字段齐全） ──
+dir=$(mk)
+ok=0
+cat > "$dir/FINDINGS.md" <<'EOF'
+# FINDINGS
+
+## 索引
+
+## 热条目
+
+### F2：CLI 框架选型
+- 日期：2026-07-18
+- 来源：调研探针
+- 标签：技术选型
+- 结论：commander.js 满足需求
+- 影响：无
+- 状态：有效
+EOF
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finding-add --title "逗号拆 tag 大小写不可靠" --source 失败尝试 --tag 数据 --conclusion "试过用逗号拆分 tag，大小写混乱导致重复条目，改用以空格分隔并统一小写。")
+rc=$?
+[ $rc -eq 0 ] || { ok=1; echo "  ↳ rc=$rc"; }
+echo "$out" | grep -q '^F3 | '"$TODAY"' | 数据 | 有效 | 逗号拆 tag 大小写不可靠$' || { ok=1; echo "  ↳ stdout=$out"; }
+echo "$out" | grep -q '已再生索引' || ok=1
+grep -q '^### F3：逗号拆 tag 大小写不可靠$' "$dir/FINDINGS.md" || ok=1
+grep -q "^- 日期：$TODAY$" "$dir/FINDINGS.md" || ok=1
+grep -q '^- 来源：失败尝试$' "$dir/FINDINGS.md" || ok=1
+grep -q '^- 状态：有效$' "$dir/FINDINGS.md" || ok=1
+# 写完立刻可查（索引已再生）
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" findings --tag 数据)
+echo "$out" | grep -q 'F3' || ok=1
+# 归档文件的编号不复用
+echo '### F7：归档老结论' > "$dir/FINDINGS.archive.md"
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finding-add --title "另一条独立结论" --source 外部输入 --conclusion "归档已用到 F7，所以新条目应为 F8。")
+echo "$out" | grep -q '^F8 ' || { ok=1; echo "  ↳ 编号未跳过归档：$out"; }
+report "finding-add：编号递增、字段齐全、写完立刻可查" $ok
+
+# ── 用例 30：finding-add 闸门（同主题退 2 / 问句退 3 / --amend 不新开号） ──
+ok=0
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finding-add --title "逗号拆 tag 不可靠" --source 失败尝试 --conclusion "再开一条同主题的。")
+rc=$?
+[ $rc -eq 2 ] || { ok=1; echo "  ↳ 同主题 rc=$rc（期望 2）"; }
+echo "$out" | grep -q '同主题已有 F3' || ok=1
+echo "$out" | grep -q -- '--amend F3' || ok=1
+
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finding-add --title "要不要换 yargs" --source 调研探针 --conclusion "要不要换 yargs？")
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ 问句 rc=$rc（期望 3）"; }
+
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finding-add --amend F3 --conclusion "补充：mac 上同样复现。")
+rc=$?
+[ $rc -eq 0 ] || { ok=1; echo "  ↳ amend rc=$rc"; }
+echo "$out" | grep -q '已补充 F3' || ok=1
+grep -q '^#### 补（'"$TODAY"'）$' "$dir/FINDINGS.md" || ok=1
+# --amend 不新开号：F8 之后不应出现 F9
+grep -q '^### F9' "$dir/FINDINGS.md" && ok=1
+# 补的内容在 --full 里可见（用 #### 而非 ###，否则会被当成新条目边界切断 F3）
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" findings --full F3)
+echo "$out" | grep -q 'mac 上同样复现' || ok=1
+echo "$out" | grep -q '^### F3：' || ok=1
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finding-add --amend F3 --source 失败尝试 --conclusion "补充不该带 source。")
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ amend+source rc=$rc（期望 3）"; }
+# --amend 拒绝条目级字段：写进「补」会覆盖原条目字段（parseFindings 按条目合并同名键），
+# 静默丢弃更糟（agent 会以为材料指针记下了）
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finding-add --amend F3 --conclusion "补一段。" --material notes/x.md)
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ amend+material rc=$rc（期望 3）"; }
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finding-add --amend F3 --conclusion "补一段。" --tag 同步)
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ amend+tag rc=$rc（期望 3）"; }
+# --amend 编号格式校验（不拼出 Fundefined 这种编号）
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finding-add --amend 乱写 --conclusion "补一段。")
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ amend 编号非法 rc=$rc（期望 3）"; }
+# 以上被拒的三次都不该落盘
+grep -q '补一段' "$dir/FINDINGS.md" && ok=1
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finding-add --amend F99 --conclusion "没有这个号。")
+rc=$?
+[ $rc -eq 2 ] || { ok=1; echo "  ↳ amend 不存在 rc=$rc（期望 2）"; }
+report "finding-add：同主题/问句闸门与 --amend 语义" $ok
+
+# ── 用例 31：finding-add --force 互写参见 ──
+ok=0
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" finding-add --title "逗号拆 tag 在 Windows 上另有行为" --source 开发中发现 --conclusion "NTFS 下大小写不敏感，与 mac 表现不同，需显式归一化。" --force)
+rc=$?
+[ $rc -eq 0 ] || { ok=1; echo "  ↳ rc=$rc"; }
+echo "$out" | grep -q '^F9 ' || { ok=1; echo "  ↳ 期望 F9：$out"; }
+grep -q '^- 参见：F3$' "$dir/FINDINGS.md" || ok=1
+grep -q '^- 参见：F9$' "$dir/FINDINGS.md" || ok=1
+report "finding-add：--force 新开同主题并互写参见" $ok
+
+# ── 用例 32：inbox-add（模板格式 + 查重） ──
+dir=$(mk)
+ok=0
+cat > "$dir/INBOX.md" <<'EOF'
+# INBOX
+
+## 待裁决
+
+- [ ] 2026-09-01 ⚪ 云同步支持
+- 已解决：给同步加增量传输 ✅（2026-09-02）
+
+## 已裁决（存档）
+EOF
+cat > "$dir/FINDINGS.md" <<'EOF'
+# FINDINGS
+
+## 索引
+
+## 热条目
+
+### F2：CLI 框架选型
+- 日期：2026-07-18
+- 来源：调研探针
+- 结论：commander.js 满足需求
+- 影响：无
+- 状态：有效
+EOF
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" inbox-add "要不要支持正则过滤" --flag 红 --origin 灵感 --finding F2)
+rc=$?
+[ $rc -eq 0 ] || { ok=1; echo "  ↳ rc=$rc"; }
+echo "$out" | grep -q '已停 INBOX：要不要支持正则过滤' || ok=1
+n=$(printf '%s\n' "$out" | wc -l)
+[ "$n" -le 3 ] || { ok=1; echo "  ↳ stdout $n 行 > 3"; }
+# 行含 emoji：用 node 按码点比对（Git Bash 的 grep 吃不下非 ASCII 长模式）
+node -e 'const fs=require("fs");const t=fs.readFileSync(process.argv[1],"utf8");const want="- [ ] "+process.argv[2]+" "+String.fromCodePoint(0x1F534)+" 要不要支持正则过滤 — 来源：灵感 ｜ F2";process.exit(t.split("\n").includes(want)?0:1)' "$dir/INBOX.md" "$TODAY"
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" inbox-add "另一个想法" --finding F99)
+rc=$?
+[ $rc -eq 2 ] || { ok=1; echo "  ↳ 坏引用 rc=$rc（期望 2）"; }
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" inbox-add "云同步支持")
+rc=$?
+[ $rc -eq 0 ] || { ok=1; echo "  ↳ 已解决 rc=$rc（期望 0）"; }
+echo "$out" | grep -q '已由 给同步加增量传输 ✅ 实现' || ok=1
+[ "$(grep -c '^- \[ \]' "$dir/INBOX.md")" -eq 2 ] || ok=1
+report "inbox-add：模板格式、引用校验、已解决退 0" $ok
+
+# ── 用例 33：progress-log（--kind 落当天标题 / --position 第一条 / --next 第二条） ──
+dir=$(mk)
+ok=0
+mkdir -p "$dir/.planning/$TODAY-store-js"
+cat > "$dir/.planning/$TODAY-store-js/plan.md" <<'EOF'
+# 任务工作区：store.js 扩展 tag 字段
+
+## 步骤
+
+- [ ] 步骤1
+
+## 当前位置
+
+- 进行到哪一步：步骤1 改字段
+- 下一步要做什么：补测试
+- 待决问题：无
+EOF
+cat > "$dir/.planning/$TODAY-store-js/progress.md" <<'EOF'
+# progress：store.js 扩展 tag 字段
+
+## Postmortem
+
+- **声明**：本文档为过程记录，结论以 FINDINGS.md 为准。
+
+---
+
+## 日志
+
+### 2026-09-10
+
+- 进展：开了头
+EOF
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" progress-log "$TODAY-store-js" --text "改了 store.js 解析")
+rc=$?
+[ $rc -eq 0 ] || { ok=1; echo "  ↳ rc=$rc"; }
+n=$(printf '%s\n' "$out" | wc -l)
+[ "$n" -eq 1 ] || { ok=1; echo "  ↳ stdout $n 行（期望 1）"; }
+echo "$out" | grep -q '已记 progress（进展）' || ok=1
+grep -q "^### $TODAY$" "$dir/.planning/$TODAY-store-js/progress.md" || ok=1
+grep -q '^- 进展：改了 store.js 解析$' "$dir/.planning/$TODAY-store-js/progress.md" || ok=1
+
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" progress-log "$TODAY-store-js" --kind 决策 --text "用空格分隔而非逗号" --position "步骤2 改解析器" --next "补单测")
+rc=$?
+[ $rc -eq 0 ] || { ok=1; echo "  ↳ rc=$rc"; }
+grep -q '^- 决策：用空格分隔而非逗号$' "$dir/.planning/$TODAY-store-js/progress.md" || ok=1
+grep -q '^- 进行到哪一步：步骤2 改解析器$' "$dir/.planning/$TODAY-store-js/plan.md" || ok=1
+grep -q '^- 下一步要做什么：补单测$' "$dir/.planning/$TODAY-store-js/plan.md" || ok=1
+grep -q '^- 待决问题：无$' "$dir/.planning/$TODAY-store-js/plan.md" || ok=1
+
+long=$(node -e 'process.stdout.write("长".repeat(201))')
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" progress-log "$TODAY-store-js" --text "$long")
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ 超长 rc=$rc（期望 3）"; }
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" progress-log "$TODAY-store-js" --kind 瞎写 --text "x")
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ 未知 kind rc=$rc（期望 3）"; }
+# 没给 --text 时 --kind 无意义：拒绝而不是静默丢弃
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" progress-log "$TODAY-store-js" --kind 决策 --position "只改位置")
+rc=$?
+[ $rc -eq 3 ] || { ok=1; echo "  ↳ kind 无 text rc=$rc（期望 3）"; }
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" progress-log nosuch --text "x")
+rc=$?
+[ $rc -eq 2 ] || { ok=1; echo "  ↳ 无工作区 rc=$rc（期望 2）"; }
+mkdir -p "$dir/.planning/done/2026-09-01-old"
+cp "$dir/.planning/$TODAY-store-js/progress.md" "$dir/.planning/done/2026-09-01-old/"
+out=$(PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" progress-log 2026-09-01-old --text "x")
+rc=$?
+[ $rc -eq 2 ] || { ok=1; echo "  ↳ 归档区 rc=$rc（期望 2）"; }
+report "progress-log：日志落位、位置改对、闸门齐全" $ok
+
+# ── 用例 34：写入族不改 hook 输出；usage 列出新命令 ──
+dir=$(mk)
+ok=0
+cat > "$dir/TASKS.md" <<'EOF'
+# TASKS
+
+## 进行中
+
+### 任务甲
+- DoD：一句话
+EOF
+before=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/session-start.sh")
+PLANNING_ROOT="$(winpath "$dir")" node "$ENGINE" task-add "任务乙" --dod "另一句" >/dev/null
+after=$(PLANNING_ROOT="$(winpath "$dir")" sh "$HOOKS_DIR/session-start.sh")
+[ "$before" = "$after" ] || { ok=1; echo "  ↳ hook 输出被写入族改变了"; }
+out=$(node "$ENGINE" xxx 2>&1)
+echo "$out" | grep -q 'task-add "<标题>" --dod' || ok=1
+echo "$out" | grep -q 'finding-add --title' || ok=1
+echo "$out" | grep -q 'inbox-add "<标题>"' || ok=1
+echo "$out" | grep -q 'progress-log <slug>' || ok=1
+report "写入族：hook 输出不变 + usage 列出 4 个新命令" $ok
 
 
 # ── 汇总 ───────────────────────────────────────────────────────

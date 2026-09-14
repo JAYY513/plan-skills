@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 ## 读取文件
 
-有 node 时在项目根跑 plan-task 引擎，不要整读 FINDINGS.md：`status`、`findings`、`inbox`、`links --orphan`。命中主题再用 `findings --full F?`。无 node：ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文；FINDINGS.md 只读「索引」受管区与本次相关条目。缺失计划文件 → 提示先运行 plan-init。
+有 node 时在项目根跑 plan-task 引擎，不要整读 FINDINGS.md：`status`、`findings`、`inbox`、`links --orphan`。命中主题再用 `findings --full F?`。**追加一条不要整读**：落结论用 `finding-add` / `finding-add --amend`，停一条停车项用 `inbox-add`（分诊归档本身是判断活，仍可手改 FINDINGS 后跑 `reindex`）。无 node：ROADMAP.md、TASKS.md、INBOX.md、SPEC.md、AGENTS.md 全文；FINDINGS.md 只读「索引」受管区与本次相关条目。缺失计划文件 → 提示先运行 plan-init。
 
 
 ## 执行步骤（按顺序）

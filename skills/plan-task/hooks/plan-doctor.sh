@@ -3,8 +3,11 @@
 # 用法：sh plan-doctor.sh [--global]。诊断工具，由用户显式运行，不受 PLANNING_HOOKS_DISABLED 影响。
 # 有 FAIL 时 exit 1，否则 exit 0（WARN 不影响退出码）。
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ENGINE="$DIR/../engine/plan.mjs"
+# Windows 的 Git Bash / MSYS：node 是原生程序，不认 /c/... 这类 POSIX 路径（会当成 C://c//...）
+if command -v cygpath >/dev/null 2>&1; then ENGINE=$(cygpath -w "$ENGINE"); fi
 if command -v node >/dev/null 2>&1; then
-  exec node "$DIR/../engine/plan.mjs" doctor "$@"
+  exec node "$ENGINE" doctor "$@"
 fi
 echo "[FAIL] node 运行时: 未找到 node（引擎与所有 hooks 不可用，请安装 Node.js >= 18）"
 echo "-----"

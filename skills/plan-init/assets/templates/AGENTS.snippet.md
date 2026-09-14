@@ -21,7 +21,7 @@
 ### 纪律
 
 - 执行层（TASKS / FINDINGS / INBOX / .planning/）全自动，写后告知一句即可；锚（SPEC）和路标（ROADMAP）写前必须确认
-- hook 可选，不是流程前提。无 hook 时本段 + plan-task / plan-review 技能仍自动实施完整流程：本会话第一次触及计划前跑 `plan.mjs status`（无 node 则读 SPEC「不做什么（边界）」「技术选型」+ TASKS 进行中标题）；查状态用 `status/findings/inbox/task`，不整读 FINDINGS.md / progress.md；开工 `start`、收工对齐门后 `finish`；收尾前自检两门（活跃工作区未 ✅、隔天进行中无工作区）。有 hook 只是少打字。SPEC 红线违背时先停下与用户确认
+- hook 可选，不是流程前提。无 hook 时本段 + plan-task / plan-review 技能仍自动实施完整流程：本会话第一次触及计划前跑 `plan.mjs status`（无 node 则读 SPEC「不做什么（边界）」「技术选型」+ TASKS 进行中标题）；查状态用 `status/findings/inbox/task`，不整读 FINDINGS.md / progress.md；**追加一条用 `task-add` / `finding-add` / `inbox-add` / `progress-log`，不要整读了再 Edit**（改 DoD / 挪队 / 删卡仍手改，此时读文件不禁）；开工 `start`、收工对齐门后 `finish`；收尾前自检两门（活跃工作区未 ✅、隔天进行中无工作区）。有 hook 只是少打字。SPEC 红线违背时先停下与用户确认
 - 规则细节见对应技能：任务录入、开工、工作区、完成（含对齐门）→ plan-task；计划变更、里程碑交接、INBOX 裁决 → plan-review。本文件不复述规则条文
 
 
