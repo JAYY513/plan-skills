@@ -194,7 +194,7 @@ plan-review：分诊归档仍可手改 FINDINGS（判断活）+ `reindex`；不�
 |---|---|---|
 | 1 | `cmdTaskAdd` + `titleHit` / `solvedHit` + `usage()` | `similarTitles` 对 <4 字归一化标题恒 false，故查重一律走 `titleHit`（精确 **或** 相似） |
 | 2 | `cmdFindingAdd`（`--amend` / `--force`）+ 写后 `cmdReindex(root, true)` | 追加条用 `#### 补（date）`：`parseFindings` 把 `^###\s` 当条目边界，`###` 会切断当前块 |
-| 3 | `cmdInboxAdd` + `cmdProgressLog` + SKILL / AGENTS 文案 | progress 日标题下**不插空行**，逐字对齐模板 |
+| 3 | `cmdInboxAdd` + `cmdProgressLog` + SKILL / AGENTS 文案 | progress **逐字对齐模板**：新建当天标题时 `### <日期>` 下**有**空行再接 `- 进展：`（模板第 17~19 行就是这样）；追加到已有当天标题时条目之间不插空行 |
 | 4 | 回归 | 10 个新用例 + hook 输出逐字比对不变 |
 
 顺带修掉四处**本期范围外**的环境问题（否则本机连存量用例都跑不起来，无法验证本期）：
@@ -205,6 +205,24 @@ plan-review：分诊归档仍可手改 FINDINGS（判断活）+ `reindex`；不�
 | 测试 harness 传 POSIX 路径 | `tests/test-hooks.sh` | 加 `winpath()`（`cygpath -w`），`PLANNING_ROOT` 全部转换 |
 | Git Bash grep 匹配不了 emoji | `tests/test-hooks.sh` | INBOX 🔴 断言改 `node -e` 码点比较 |
 | `pwsh` 存在但被安全策略挂住 | `tests/test-hooks.sh` | 原 `command -v pwsh` 预检过不去（存在≠能跑）→ 整条套件永久卡死。Git Bash / MSYS 不启动原生 pwsh（GNU timeout 杀不掉 Win32 进程）。POSIX 只给空命令预检套 `timeout 3`（成功路径几乎 0 额外耗时；卡死最多 3s 后 SKIP）；预检通过后的真实用例不再套 timeout |
+
+### 8.2 复查记录（2026-09-14，施工后）
+
+复查方式：不读代码「看着对」，而是拿引擎 + 真模板建临时项目**逐条实跑**，再回读落盘文件。查出三处**静默行为**，全部改为显式退 3：
+
+| 问题 | 现象 | 修法 |
+|---|---|---|
+| `--amend` 静默丢弃条目级 flag | `--amend F3 --conclusion x --material notes/a.md` 退 0，但 `- 材料：` 没落盘——agent 会以为记下了指针 | `--tag` / `--impact` / `--material` / `--trace` 与 `--amend` 同用 → 退 3。**不能写进「补」**：`parseFindings` 按条目合并同名键，补里的 `- 标签：` 会覆盖原条目字段 |
+| `--amend` 编号不校验 | `--amend`（漏值）拼出 `Fundefined`，报「未找到 Fundefined」 | 非 `F<n>` / `<n>` → 退 3，回显收到的值 |
+| `progress-log --kind` 无 `--text` | `--kind 决策 --position "…"` 退 0，kind 被无声忽略 | 没给 `--text` 就给 `--kind` → 退 3 |
+
+已实跑确认**符合模板**、无需改的几处：
+
+- `progress-log` 新建当天标题时，`### <日期>` 下**有**空行再接 `- 进展：`——模板第 17~19 行就是这样，**不要删**。
+- `--position` / `--next` 只换值、保留 `- 进行到哪一步：` 标签，第三条「待决问题」不动。
+- `task-add` 队尾 / `--head` 队首落位正确；`inbox-add` 行逐字段对模板（`- [ ] <日期> 🔴 <标题> — 来源：X ｜ F1`）。
+
+复查后重跑：**45 用例 PASS 45 / FAIL 0**（新增 6 条断言：amend+material / amend+tag / amend 编号非法 / 三者均不落盘 / kind 无 text）。
 
 ## 9. 验收
 
